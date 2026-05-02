@@ -5,6 +5,7 @@ import type { EventPresetKind, SamplingParams } from "@/types/preset";
 import type { ChatMessage } from "@/types/turn";
 import type { WorldState } from "@/types/worldState";
 import type { PromptBuildTrace } from "./types";
+import { applyNativeStyleGuide } from "./nativeStyleGuide";
 
 export type LegacyPromptBuildInput = {
   card: CharacterCardV2;
@@ -41,15 +42,16 @@ export function buildLegacyPrompt(input: LegacyPromptBuildInput): LegacyPromptBu
   });
 
   return {
-    messages: assembled.messages,
+    messages: applyNativeStyleGuide(assembled.messages),
     sampling: preset.sampling,
     trace: {
       mode: "legacy",
       presetName: assembled.trace.presetName,
       activeLoreEntries: assembled.trace.activeLoreEntries,
       authorsNote: assembled.trace.authorsNote,
-      messageCount: assembled.messages.length,
+      messageCount: assembled.messages.length + 1,
       sampling: preset.sampling,
+      warnings: ["已启用项目内置轻量文风层；仍保持 narrations 短句协议。"],
     },
   };
 }

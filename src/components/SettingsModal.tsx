@@ -68,8 +68,8 @@ export function SettingsModal({ initial, onClose }: Props) {
       };
       saveStoredSillyTavernPreset(stored);
       setStoredPreset(stored);
-      updatePromptMode("sillytavern-preset-natural");
-      setPresetMsg(`已导入：${parsed.summary.name}`);
+      updatePromptMode("legacy");
+      setPresetMsg(`已导入：${parsed.summary.name}。当前仍使用项目短句协议生成。`);
     } catch (e) {
       setPresetMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`);
     }
@@ -86,7 +86,6 @@ export function SettingsModal({ initial, onClose }: Props) {
   function updateSillyTavernPreset(next: StoredSillyTavernPreset, message: string) {
     saveStoredSillyTavernPreset(next);
     setStoredPreset(next);
-    updatePromptMode("sillytavern-preset-natural");
     setPresetMsg(message);
   }
 
@@ -200,12 +199,10 @@ export function SettingsModal({ initial, onClose }: Props) {
             value={promptMode}
             onChange={(e) => updatePromptMode(e.target.value as PromptMode)}
           >
-            <option value="legacy">Legacy：项目内置 promptRouter</option>
-            <option value="sillytavern-preset">ST Preset JSON Contract：按 prompt_order 编译后要求 event_json</option>
-            <option value="sillytavern-preset-natural">ST Preset Natural Adapter：先生成正文再转 StoryTurn</option>
+            <option value="legacy">项目短句协议 + 轻量文风增强（推荐）</option>
           </select>
           <small className="hint">
-            Natural Adapter 更接近酒馆真实流程；JSON Contract 保留为稳定兜底。
+            当前黑客松演示固定走原项目 narrations 短句队列，避免 ST preset 接管后变成长段正文。
           </small>
         </label>
 
@@ -213,7 +210,7 @@ export function SettingsModal({ initial, onClose }: Props) {
           <div className="st-editor-head">
             <div>
               <strong>SillyTavern 预设设置</strong>
-              <small>导入 preset 后会显示酒馆式 prompt 条目开关和内容编辑。</small>
+              <small>导入 preset 后仅作为参考和本地编辑，不再自动接管生成。</small>
             </div>
           </div>
 
@@ -233,7 +230,7 @@ export function SettingsModal({ initial, onClose }: Props) {
                 {storedPreset.summary.sourceMaxTokens ? ` · source max tokens ${storedPreset.summary.sourceMaxTokens}` : ""}
               </small>
             ) : (
-              <small className="hint">未导入 preset。选择 JSON 后会自动启用 Natural Adapter 并显示条目设置。</small>
+              <small className="hint">未导入 preset。选择 JSON 后会显示条目设置，但生成仍使用项目短句协议。</small>
             )}
           </label>
 

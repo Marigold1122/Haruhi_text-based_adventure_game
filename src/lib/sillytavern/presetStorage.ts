@@ -16,7 +16,8 @@ export function loadPromptMode(): PromptMode {
   try {
     const raw = localStorage.getItem(MODE_KEY);
     if (raw === "sillytavern-preset" || raw === "sillytavern-preset-natural") {
-      return raw;
+      localStorage.setItem(MODE_KEY, "legacy");
+      return "legacy";
     }
     return "legacy";
   } catch {
