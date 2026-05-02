@@ -27,6 +27,36 @@ export type RandomCharacterSeed = {
 };
 
 // ============================================================
+// 原作位置保留区——所有生成调用必须遵守
+// 这是为了防止"玩家取代阿虚坐到春日前面"这类原则性错误
+// ============================================================
+const CANON_PROTECTED_POSITIONS = `**【绝对不可触碰 · 原作角色已占用的位置】**
+玩家是【完全原创的 OC】，绝对不能挤占任何原作角色的设定位置：
+
+· 阿虚的座位：北高一年五班 · 窗边倒数第二排 · 凉宫春日的正前方——这个座位永远归阿虚。玩家不能「凑巧坐」在这里。
+· 凉宫春日的座位：阿虚正后方——玩家不能坐这里。
+· 谷口、国木田的座位（与阿虚同班、邻近）——这一片「窗边」区域全部归原作。
+· 长门有希：北高【一年六班】 + 文艺部唯一部员——玩家可以是一年六班的其他学生，但不能是文艺部部员。
+· 古泉一树：北高【一年九班】转学生（5 月连休后才转入）——开局入学日时古泉根本还没转来。
+· 朝比奈实玖瑠：北高【二年级】被春日强行拽入 SOS 团——这个年级位置已占。
+· 朝仓凉子：一年五班委员长（5 月起任）——玩家不能取代。
+· 阿虚的家、家人（妹妹 / 三味线）、初中朋友（佐佐木）——这些社会关系网都不能被玩家平移占用。
+
+**【玩家可以位于的合法位置】**
+· **首选**：一年六班 / 一年七班 / 一年八班 等北高同年级邻班——便于「走廊偶遇」/「广播听到八卦」等渐进接触
+· 一年五班的其他座位（不是窗边倒数第一第二排，也不是阿虚或春日附近）——例如教室前排、中排、靠门一侧
+· 一年九班的非古泉学生
+· 二年级 / 三年级——仅当玩家是 anomaly/observer 时出现，作为「潜伏在高年级的非人存在」
+
+**【入学日 2002-04-08 的状态约束】**
+· 阿虚刚在窗边倒数第二排坐下；春日还没到（即将到他后面）。
+· 长门一人在文艺部部室靠窗位置看书。
+· 朝比奈在二年级自己的班级，没理由出现在一年级教室。
+· 古泉还没转学到北高（5 月才来）。
+· SOS 团尚未成立（5 月才成立）。
+玩家此时与上述角色最多是「远远看到」或「擦肩而过」级别的接触。`;
+
+// ============================================================
 // 阶段 ① 最小卡 — description 是 stub XML，目标 ≤10s
 // ============================================================
 
@@ -101,6 +131,9 @@ export async function generateMinimalCard(seed: RandomCharacterSeed): Promise<Ch
         "5) system_prompt 以 [POV] {角色名} 开头并写明第一人称约束。",
         "6) extensions.archetype 填本次匹配的 id。",
         "7) scenario 必须含：北口高校 × 班级、入学日、与 SOS 团的关系。anomaly/observer 还要写真实身份 + 所属组织。",
+        "8) **班级 / 座位 / 关系定位严格遵守下方「原作位置保留区」**——这是硬规则，违反即生成错误的卡。",
+        "",
+        CANON_PROTECTED_POSITIONS,
         "",
         "【匹配的人格原型】",
         `${arch.name}（${arch.mbti}）：${arch.shortDesc}`,
@@ -140,6 +173,16 @@ export async function generateMinimalCard(seed: RandomCharacterSeed): Promise<Ch
     /** stub 标记：StoryView 看到这个 flag 会触发后台 expand */
     description_pending_expand: true,
   };
+
+  const violations = scanCanonViolations(parsed);
+  if (violations.length) {
+    console.warn(
+      "[generateMinimalCard] ⚠️ 检测到原作位置保留区违规——LLM 没遵守约束。",
+      violations,
+      "\n卡片预览（description 前 300 字）：",
+      parsed.data.description?.slice(0, 300),
+    );
+  }
   return parsed;
 }
 
@@ -264,10 +307,13 @@ export async function expandCardDescription(
         "",
         "约束：",
         "1) 14 个一级 section 一个不能少：姓名 / 称号 / 角色概述 / 基本信息 / 个性 / 目标与动机 / 日常活动 / 说话方式 / 关系网 / 偏好 / 身体特征 / 服装 / 背景 / 时间线 / 角色概念 / 附加信息",
-        "2) **与最小卡保持一致**：name / 头发颜色 / 服装风格 / 标志物 必须与已有 stub 一致；其余可独立扩展。",
+        "2) **与最小卡保持一致**：name / 头发颜色 / 服装风格 / 标志物 / 班级 / 座位 必须与已有 stub 一致；其余可独立扩展。",
         "3) 内核忠实匹配的原型；次匹配原型可作为人格阴影体现在次要特质上。",
         "4) 模板里 {花括号} 必须替换成具体内容；不能留下花括号。",
         "5) 模板里「{共 N 条}」这类计数说明要兑现。",
+        "6) **班级 / 座位 / 关系定位严格遵守下方「原作位置保留区」**——若最小卡里已经写了班级，必须沿用最小卡的班级。",
+        "",
+        CANON_PROTECTED_POSITIONS,
         "",
         "【匹配的人格原型】",
         `主匹配：${arch.name}（${arch.mbti}）`,
@@ -317,7 +363,7 @@ export async function expandCardDescription(
     return card;
   }
 
-  return {
+  const expanded: CharacterCardV2 = {
     ...card,
     data: {
       ...card.data,
@@ -328,11 +374,48 @@ export async function expandCardDescription(
       },
     },
   };
+
+  const violations = scanCanonViolations(expanded);
+  if (violations.length) {
+    console.warn(
+      "[expandCardDescription] ⚠️ 扩展后的 XML 仍违反原作位置保留区——LLM 没遵守约束。",
+      violations,
+      "\n描述预览：",
+      xml.slice(0, 400),
+    );
+  }
+  return expanded;
 }
 
 function extractXmlBlock(text: string): string | null {
   const m = text.match(/<角色档案>[\s\S]*?<\/角色档案>/);
   return m ? m[0] : null;
+}
+
+/**
+ * 扫描卡内容里是否出现了"取代原作角色位置"的违规短语——只 console.warn，不阻断流程。
+ * 命中即说明 LLM 没遵守原作位置保留区，需要把警告送到 trace。
+ */
+function scanCanonViolations(card: CharacterCardV2): string[] {
+  const all = [
+    card.data.description ?? "",
+    card.data.scenario ?? "",
+    card.data.first_mes ?? "",
+    card.data.personality ?? "",
+  ].join("\n");
+
+  const violations: string[] = [];
+  const checks: Array<[RegExp, string]> = [
+    [/窗边倒数第二排/, "玩家描述里出现「窗边倒数第二排」——这是阿虚的座位"],
+    [/凉宫春日?[的之]?(正?前方|前面|前排座位)/, "玩家描述里出现「凉宫春日的前面/正前方」——这是阿虚的位置"],
+    [/凉宫春日?[的之]?(正?后方|后面)/, "玩家描述里出现「凉宫春日的后面/正后方」——这是春日自己的位置（玩家不能坐这）"],
+    [/文艺部部?员|文艺部唯一/, "玩家描述里出现「文艺部部员」——这是长门的身份"],
+    [/三味线/, "玩家描述里出现「三味线」——这是阿虚家的猫，属于阿虚的家庭关系网"],
+  ];
+  for (const [re, label] of checks) {
+    if (re.test(all)) violations.push(label);
+  }
+  return violations;
 }
 
 function parseCardJson(text: string): CharacterCardV2 | null {

@@ -16,6 +16,7 @@ export type StartingPointDef = {
 };
 
 const baseRelations = {
+  kyon: { name: "阿虚", trust: 0, affection: 0, note: "未接触" },
   haruhi: { name: "凉宫春日", trust: 0, affection: 0, note: "未知" },
   nagato: { name: "长门有希", trust: 0, affection: 0, note: "未接触" },
   asahina: { name: "朝比奈实玖瑠", trust: 0, affection: 0, note: "未接触" },
@@ -81,6 +82,7 @@ export const startingPoints: StartingPointDef[] = [
       worldStability: 85,
       playerStress: 20,
       relations: {
+        kyon: { name: "阿虚", trust: 40, affection: 15, note: "同被春日折腾" },
         haruhi: { name: "凉宫春日", trust: 30, affection: 20, note: "兴致正高" },
         nagato: { name: "长门有希", trust: 50, affection: 5, note: "沉默观察" },
         asahina: { name: "朝比奈实玖瑠", trust: 40, affection: 30, note: "被绑来的" },
@@ -120,6 +122,7 @@ export const startingPoints: StartingPointDef[] = [
       worldStability: 70,
       playerStress: 35,
       relations: {
+        kyon: { name: "阿虚", trust: 70, affection: 40, note: "同舟共济" },
         haruhi: { name: "凉宫春日", trust: 60, affection: 50, note: "暑假高昂" },
         nagato: { name: "长门有希", trust: 75, affection: 20, note: "开始读侦探小说" },
         asahina: { name: "朝比奈实玖瑠", trust: 65, affection: 60, note: "泳装羞耻" },
