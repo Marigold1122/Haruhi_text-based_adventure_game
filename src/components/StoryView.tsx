@@ -18,7 +18,7 @@ import { save, load, clear, type SaveBlob } from "@/lib/storage";
 import { loadSettings } from "@/lib/settings";
 import { buildPromptForTurn } from "@/lib/prompting";
 import type { PromptBuildTrace, PromptMode } from "@/lib/prompting/types";
-import { adaptNaturalTextToStoryTurn } from "@/lib/prompting/storyTurnAdapter";
+import { adaptNaturalTextToStoryTurns } from "@/lib/prompting/storyTurnAdapter";
 import { parseSillyTavernPresetJson } from "@/lib/sillytavern/presetParser";
 import {
   applySillyTavernRegexScripts,
@@ -228,7 +228,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
           { depth: 0 },
         );
         raw = outputRegex.text;
-        batch = [adaptNaturalTextToStoryTurn(raw)];
+        batch = adaptNaturalTextToStoryTurns(raw);
         setTrace((prev) => prev ? ({
           ...prev,
           regexHits: [...new Set([...(prev.regexHits ?? []), ...outputRegex.applied])],

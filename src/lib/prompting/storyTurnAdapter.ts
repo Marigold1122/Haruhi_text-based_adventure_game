@@ -21,6 +21,38 @@ export function adaptNaturalTextToStoryTurn(raw: string): StoryTurn {
   };
 }
 
+export function adaptNaturalTextToStoryTurns(raw: string): StoryTurn[] {
+  const text = cleanNaturalText(raw);
+  if (!text) return [adaptNaturalTextToStoryTurn(raw)];
+  const parts = splitNaturalText(text);
+  const title = makeTitle(text);
+  return parts.map((part, index) => {
+    const parsed = parseDialogueSegment(part);
+    const isFirst = index === 0;
+    const isLast = index === parts.length - 1;
+    return {
+      eventTitle: isFirst ? title : "",
+      scene: "",
+      time: "",
+      mood: parsed.mood ?? "继续",
+      narration: parsed.text,
+      speaker: parsed.speaker,
+      dialogue: [],
+      stateChanges: {},
+      pace: "scene",
+      timeAdvance: isLast ? {} : { minutes: 0 },
+      requiresChoice: isLast,
+      choices: isLast
+        ? [
+            "继续观察眼前的变化",
+            "主动开口推动当前事件",
+            "把注意力转向细节线索",
+          ]
+        : [],
+    };
+  });
+}
+
 export function cleanNaturalText(raw: string): string {
   let text = raw.trim();
   const body = text.match(/<正文>([\s\S]*?)<\/正文>/i);
@@ -35,6 +67,55 @@ export function cleanNaturalText(raw: string): string {
     .replace(/<｜(?:begin▁of▁sentence|end▁of▁sentence|User|Assistant)｜>/g, "")
     .replace(/^\s*(?:我将进行符合需求的创作：|#+\s*正式创作|正文(?:内容|如下)?\s*[:：]?)/, "")
     .trim();
+}
+
+function splitNaturalText(text: string): string[] {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const source = paragraphs.length > 1 ? paragraphs : [text.trim()];
+  const parts = source.flatMap((part) => splitLongParagraph(part, 110));
+  return parts.length > 0 ? parts.slice(0, 24) : [text.trim()];
+}
+
+function splitLongParagraph(paragraph: string, maxLen: number): string[] {
+  if (paragraph.length <= maxLen) return [paragraph];
+  const sentences = paragraph.match(/[^。！？!?；;]+[。！？!?；;]?/g) ?? [paragraph];
+  const chunks: string[] = [];
+  let current = "";
+  for (const sentence of sentences) {
+    const next = sentence.trim();
+    if (!next) continue;
+    if (current && current.length + next.length > maxLen) {
+      chunks.push(current);
+      current = next;
+    } else {
+      current += next;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.flatMap((chunk) => hardSplit(chunk, maxLen + 50));
+}
+
+function hardSplit(text: string, maxLen: number): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += maxLen) {
+    chunks.push(text.slice(i, i + maxLen));
+  }
+  return chunks;
+}
+
+function parseDialogueSegment(text: string): { speaker?: string; mood?: string; text: string } {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^([^：:「『""''（）()\s]{1,16})(?:[（(]([^）)]{1,12})[）)])?[：:]\s*[「『"“']([\s\S]+?)[」』"”']?$/);
+  if (!match) return { text: trimmed };
+  return {
+    speaker: match[1].trim(),
+    mood: match[2]?.trim(),
+    text: match[3].trim(),
+  };
 }
 
 function makeTitle(text: string): string {
