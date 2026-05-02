@@ -19,6 +19,7 @@ import { loadSettings } from "@/lib/settings";
 import { buildPromptForTurn } from "@/lib/prompting";
 import type { PromptBuildTrace, PromptMode } from "@/lib/prompting/types";
 import { parseSillyTavernPresetJson } from "@/lib/sillytavern/presetParser";
+import { applySillyTavernRegexToTurn } from "@/lib/sillytavern/regexEngine";
 import {
   loadPromptMode,
   loadStoredSillyTavernPreset,
@@ -149,10 +150,23 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     });
     setTrace(withRuntimeWarnings(built.trace, promptRuntime));
 
-    const { raw, turn } = await runLLM({ messages: built.messages, sampling: built.sampling });
+    const { raw, turn: parsedTurn } = await runLLM({ messages: built.messages, sampling: built.sampling });
+    const outputRegex = applyPresetOutputRegex(parsedTurn, promptRuntime);
+    const turn = outputRegex.turn;
+    if (outputRegex.applied.length || outputRegex.warnings.length) {
+      setTrace((prev) => prev ? ({
+        ...prev,
+        regexHits: [...new Set([...(prev.regexHits ?? []), ...outputRegex.applied])],
+        warnings: [...(prev.warnings ?? []), ...outputRegex.warnings],
+      }) : prev);
+    }
 
     const userMsg: ChatMessage = { role: "user", content: promptUser };
-    const aiMsg: ChatMessage = { role: "assistant", content: raw, parsed: turn };
+    const aiMsg: ChatMessage = {
+      role: "assistant",
+      content: promptRuntime.mode === "sillytavern-preset" ? renderTurnForPrompt(turn) : raw,
+      parsed: turn,
+    };
     const nextHistory = [...baseHistory, userMsg, aiMsg];
 
     // 时间推进——按 LLM 给的 timeAdvance 字段
@@ -217,7 +231,11 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   function updateLatestTurn(updated: StoryTurn) {
     if (turns.length === 0) return;
     setTurns((prev) => [...prev.slice(0, -1), updated]);
-    setHistory((prev) => replaceLastParsedAssistant(prev, updated));
+    setHistory((prev) => replaceLastParsedAssistant(
+      prev,
+      updated,
+      promptRuntime.mode === "sillytavern-preset" ? renderTurnForPrompt(updated) : serializeTurn(updated),
+    ));
   }
 
   async function runEnding(trigger: EndingTrigger, finalState: WorldState, nextHistory: ChatMessage[]) {
@@ -386,7 +404,29 @@ function withRuntimeWarnings(trace: PromptBuildTrace, runtime: PromptRuntime): P
   };
 }
 
-function replaceLastParsedAssistant(history: ChatMessage[], turn: StoryTurn): ChatMessage[] {
+function applyPresetOutputRegex(
+  turn: StoryTurn,
+  runtime: PromptRuntime,
+): { turn: StoryTurn; applied: string[]; warnings: string[] } {
+  if (runtime.mode !== "sillytavern-preset" || !runtime.preset) {
+    return { turn, applied: [], warnings: [] };
+  }
+  return applySillyTavernRegexToTurn(turn, runtime.preset.extensions?.regex_scripts, { depth: 0 });
+}
+
+function renderTurnForPrompt(turn: StoryTurn): string {
+  const dialogue = turn.dialogue
+    .map((line) => {
+      const text = line.text.trim();
+      if (!text) return "";
+      const speaker = line.speaker.trim();
+      return speaker ? `${speaker}: ${text}` : text;
+    })
+    .filter(Boolean);
+  return [turn.narration, ...dialogue].filter((part) => part.trim()).join("\n\n");
+}
+
+function replaceLastParsedAssistant(history: ChatMessage[], turn: StoryTurn, content: string): ChatMessage[] {
   const next = [...history];
   for (let i = next.length - 1; i >= 0; i -= 1) {
     const msg = next[i];
@@ -394,7 +434,7 @@ function replaceLastParsedAssistant(history: ChatMessage[], turn: StoryTurn): Ch
       next[i] = {
         ...msg,
         parsed: turn,
-        content: serializeTurn(turn),
+        content,
       };
       break;
     }

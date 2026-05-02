@@ -74,6 +74,7 @@ export type SillyTavernCompileTrace = {
   promptOrderCharacterId?: number;
   enabledPromptCount: number;
   markerHits: string[];
+  regexHits?: string[];
   skippedPrompts: string[];
   warnings: string[];
   messageCount: number;

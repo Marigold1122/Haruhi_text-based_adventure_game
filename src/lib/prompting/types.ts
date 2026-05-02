@@ -10,6 +10,7 @@ export type PromptBuildTrace = {
   promptOrderCharacterId?: number;
   enabledPromptCount?: number;
   markerHits?: string[];
+  regexHits?: string[];
   skippedPrompts?: string[];
   warnings?: string[];
   filteredLoreEntries?: string[];

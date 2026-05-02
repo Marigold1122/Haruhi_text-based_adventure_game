@@ -103,6 +103,9 @@ export function StatusPanel({ state, characterName, trace, summaryStatus }: Prop
               </ul>
             </>
           ) : null}
+          {trace.regexHits?.length ? (
+            <p className="muted small">Regex hits: {trace.regexHits.slice(0, 4).join(" / ")}</p>
+          ) : null}
           {trace.filteredLoreEntries?.length ? (
             <p className="muted small">过滤条目：{trace.filteredLoreEntries.join("、")}</p>
           ) : null}

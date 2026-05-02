@@ -6,6 +6,10 @@ import {
   resolveSillyTavernMarker,
   type MarkerResolverContext,
 } from "./markerResolver";
+import {
+  applySillyTavernRegexScripts,
+  SILLYTAVERN_REGEX_PLACEMENT,
+} from "./regexEngine";
 import type {
   SillyTavernChatCompletionPreset,
   SillyTavernCompiledPrompt,
@@ -24,12 +28,23 @@ export function compileSillyTavernPresetPrompt(opts: {
   markerContext: MarkerResolverContext;
   options?: SillyTavernPresetCompileOptions;
 }): SillyTavernCompiledPrompt {
-  const { preset, markerContext, options } = opts;
+  const { preset, options } = opts;
   const warnings: string[] = [];
   const markerHits: string[] = [];
   const skippedPrompts: string[] = [];
   const prompts = Array.isArray(preset.prompts) ? preset.prompts : [];
   const promptById = new Map<string, SillyTavernPrompt>();
+  const userInputRegex = applySillyTavernRegexScripts(
+    opts.markerContext.currentUserInput,
+    preset.extensions?.regex_scripts,
+    SILLYTAVERN_REGEX_PLACEMENT.USER_INPUT,
+    { depth: 0 },
+  );
+  const markerContext: MarkerResolverContext = {
+    ...opts.markerContext,
+    currentUserInput: userInputRegex.text,
+  };
+  warnings.push(...userInputRegex.warnings);
 
   for (const prompt of prompts) {
     if (prompt.identifier) promptById.set(prompt.identifier, prompt);
@@ -88,6 +103,7 @@ export function compileSillyTavernPresetPrompt(opts: {
       promptOrderCharacterId: order?.character_id,
       enabledPromptCount: orderedItems.length,
       markerHits,
+      regexHits: userInputRegex.applied,
       skippedPrompts,
       warnings,
       messageCount: messages.length,
