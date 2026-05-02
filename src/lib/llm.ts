@@ -4,9 +4,10 @@
 // MVP 阶段用 mockLLM 返回拼好的 <event_json> 文本，保证完整闭环。
 // 后续替换为真实 chat completion 调用即可（OpenAI / Claude / 本地 LLM 同 ChatML 模式）。
 
-import type { ChatMessage, StoryTurn, TimeAdvance } from "@/types/turn";
+import type { ChatMessage, StoryTurn, TimeAdvance, VoiceCue } from "@/types/turn";
 import type { SamplingParams } from "@/types/preset";
 import type { WorldState } from "@/types/worldState";
+import { adaptNaturalTextToStoryTurns } from "@/lib/prompting/storyTurnAdapter";
 
 export type LLMCall = (
   messages: ChatMessage[],
@@ -76,7 +77,7 @@ function cleanDialogue(value: unknown): StoryTurn["dialogue"] {
     .filter((line): line is Record<string, unknown> => Boolean(line) && typeof line === "object")
     .map((line) => ({
       speaker: typeof line.speaker === "string" ? stripGeneratedTextPrefix(line.speaker) : "",
-      mood: typeof line.mood === "string" ? stripGeneratedTextPrefix(line.mood) : undefined,
+      mood: stringOrUndefined(line.mood) ?? stringOrUndefined(line.tone),
       text: typeof line.text === "string" ? stripGeneratedTextPrefix(line.text) : "",
     }))
     .filter((line) => line.speaker || line.text);
@@ -123,14 +124,17 @@ function finalizeTurn(o: Record<string, unknown>): StoryTurn {
     typeof o.speaker === "string" && o.speaker.trim()
       ? stripGeneratedTextPrefix(o.speaker.trim())
       : undefined;
+  const tts = normalizeVoiceCue(o);
+  const mood = stringOrUndefined(o.mood) ?? stringOrUndefined(o.tone) ?? "";
 
   return {
     eventTitle: stripGeneratedTextPrefix(o.eventTitle as string),
     scene: typeof o.scene === "string" ? stripGeneratedTextPrefix(o.scene) : "",
     time: typeof o.time === "string" ? stripGeneratedTextPrefix(o.time) : "",
-    mood: typeof o.mood === "string" ? stripGeneratedTextPrefix(o.mood) : "",
+    mood,
     narration: stripGeneratedTextPrefix(o.narration as string),
     speaker,
+    tts,
     dialogue: cleanDialogue(o.dialogue),
     stateChanges: (o.stateChanges as StoryTurn["stateChanges"]) ?? {},
     pace,
@@ -139,6 +143,41 @@ function finalizeTurn(o: Record<string, unknown>): StoryTurn {
     choices,
     chain: o.chain as StoryTurn["chain"],
   };
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim()
+    ? stripGeneratedTextPrefix(value.trim())
+    : undefined;
+}
+
+function normalizeVoiceCue(source: Record<string, unknown>): VoiceCue | undefined {
+  const nested = source.tts && typeof source.tts === "object"
+    ? source.tts as Record<string, unknown>
+    : {};
+  const cue: VoiceCue = {
+    tone: stringOrUndefined(source.tone) ?? stringOrUndefined(nested.tone),
+    emotion: stringOrUndefined(source.emotion) ?? stringOrUndefined(nested.emotion),
+    delivery: stringOrUndefined(source.delivery) ?? stringOrUndefined(nested.delivery),
+    speed: stringOrUndefined(source.speed) ?? stringOrUndefined(nested.speed),
+    volume: stringOrUndefined(source.volume) ?? stringOrUndefined(nested.volume),
+  };
+
+  const intensity = numberOrUndefined(source.intensity) ?? numberOrUndefined(nested.intensity);
+  if (intensity !== undefined) cue.intensity = clamp(intensity, 0, 1);
+
+  const pauseAfterMs = numberOrUndefined(source.pauseAfterMs) ?? numberOrUndefined(nested.pauseAfterMs);
+  if (pauseAfterMs !== undefined) cue.pauseAfterMs = Math.round(clamp(pauseAfterMs, 0, 5000));
+
+  return Object.values(cue).some((value) => value !== undefined) ? cue : undefined;
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 /** 单段解析（向前兼容旧 API）—— LLM 返回单个对象时用 */
@@ -246,13 +285,105 @@ function expandNarrations(wrapper: Record<string, unknown>): StoryTurn[] {
   });
 }
 
+function expandSegments(wrapper: Record<string, unknown>): StoryTurn[] {
+  const raw = wrapper.segments;
+  if (!Array.isArray(raw)) return [];
+  const segments = raw
+    .filter((segment): segment is Record<string, unknown> => Boolean(segment) && typeof segment === "object")
+    .map(normalizeSegment)
+    .filter((segment): segment is NormalizedSegment => Boolean(segment));
+  if (segments.length === 0) return [];
+
+  const eventTitle = typeof wrapper.eventTitle === "string" ? stripGeneratedTextPrefix(wrapper.eventTitle) : "";
+  const scene = typeof wrapper.scene === "string" ? stripGeneratedTextPrefix(wrapper.scene) : "";
+  const time = typeof wrapper.time === "string" ? stripGeneratedTextPrefix(wrapper.time) : "";
+  const mood = typeof wrapper.mood === "string" ? stripGeneratedTextPrefix(wrapper.mood) : "";
+  const pace: StoryTurn["pace"] = wrapper.pace === "scene" ? "scene" : "summary";
+  const chain = wrapper.chain as StoryTurn["chain"];
+
+  const ta = (wrapper.timeAdvance ?? {}) as Partial<TimeAdvance>;
+  const timeAdvance: TimeAdvance = {
+    days: typeof ta.days === "number" ? ta.days : undefined,
+    hours: typeof ta.hours === "number" ? ta.hours : undefined,
+    minutes: typeof ta.minutes === "number" ? ta.minutes : undefined,
+    note: typeof ta.note === "string" ? ta.note : undefined,
+  };
+  if (
+    timeAdvance.days === undefined &&
+    timeAdvance.hours === undefined &&
+    timeAdvance.minutes === undefined
+  ) {
+    if (pace === "summary") timeAdvance.days = 1;
+    else timeAdvance.minutes = Math.max(segments.length, 5);
+  }
+
+  const stateChanges = (wrapper.stateChanges as StoryTurn["stateChanges"]) ?? {};
+  const requiresChoice = typeof wrapper.requiresChoice === "boolean" ? wrapper.requiresChoice : false;
+  const rawChoices = (wrapper.choices as string[]) ?? [];
+  const choices = requiresChoice
+    ? rawChoices.filter((c) => typeof c === "string").map(stripGeneratedTextPrefix).slice(0, 4)
+    : [];
+
+  return segments.map((segment, i) => {
+    const isFirst = i === 0;
+    const isLast = i === segments.length - 1;
+    const speaker = segment.type === "dialogue" ? segment.speaker : undefined;
+    return {
+      eventTitle: isFirst ? eventTitle : "",
+      scene: isFirst ? scene : "",
+      time: isFirst ? time : "",
+      mood: speaker ? segment.tone ?? segment.emotion ?? "" : (isFirst ? mood : ""),
+      narration: segment.text,
+      speaker,
+      tts: segment.tts,
+      dialogue: [],
+      stateChanges: isLast ? stateChanges : {},
+      pace,
+      timeAdvance: isLast ? timeAdvance : { minutes: 0 },
+      requiresChoice: isLast ? requiresChoice : false,
+      choices: isLast ? choices : [],
+      chain,
+    };
+  });
+}
+
+type NormalizedSegment = {
+  type: "narration" | "dialogue";
+  text: string;
+  speaker?: string;
+  tone?: string;
+  emotion?: string;
+  tts?: VoiceCue;
+};
+
+function normalizeSegment(segment: Record<string, unknown>): NormalizedSegment | null {
+  const text = stringOrUndefined(segment.text) ?? stringOrUndefined(segment.narration);
+  if (!text) return null;
+  const speaker = stringOrUndefined(segment.speaker);
+  const type = segment.type === "dialogue" || speaker ? "dialogue" : "narration";
+  const tone = stringOrUndefined(segment.tone) ?? stringOrUndefined(segment.mood);
+  const emotion = stringOrUndefined(segment.emotion);
+  const tts = type === "dialogue"
+    ? normalizeVoiceCue({ ...segment, tone: tone ?? segment.tone, emotion: emotion ?? segment.emotion })
+    : undefined;
+  return {
+    type,
+    text,
+    speaker: type === "dialogue" ? speaker : undefined,
+    tone,
+    emotion,
+    tts,
+  };
+}
+
 /**
  * 批量解析：返回 StoryTurn 数组。
  * 解析优先级：
- *   ① 对象 + narrations 字符串数组（新协议——LLM 友好）—— 自动展开为多段
- *   ② 对象 + turns 对象数组
- *   ③ 顶层数组 [turn1, turn2, ...]
- *   ④ 单个 turn 对象（旧格式，包装为长度 1 数组）
+ *   ① 对象 + segments 对象数组（新协议，TTS 友好）
+ *   ② 对象 + narrations 字符串数组（旧协议）—— 自动展开为多段
+ *   ③ 对象 + turns 对象数组
+ *   ④ 顶层数组 [turn1, turn2, ...]
+ *   ⑤ 单个 turn 对象（旧格式，包装为长度 1 数组）
  * 解析失败返回空数组。
  * 如果某段 requiresChoice=true，截断到该段（之后段被丢弃）。
  */
@@ -275,13 +406,17 @@ export function parseEventJsonBatch(text: string): StoryTurn[] {
   if (!obj) obj = extractBareJsonObject(text);
   if (!obj) return [];
 
-  // ① 顶层对象 + narrations 数组（新协议优先）
+  // ① 顶层对象 + segments 数组（新协议优先）
   if (!Array.isArray(obj) && typeof obj === "object") {
     const wrapper = obj as Record<string, unknown>;
+    if (Array.isArray(wrapper.segments) && wrapper.segments.length > 0) {
+      return truncateAtFirstChoice(expandSegments(wrapper));
+    }
+    // ② 顶层对象 + narrations 数组（旧协议兼容）
     if (Array.isArray(wrapper.narrations) && wrapper.narrations.length > 0) {
       return truncateAtFirstChoice(expandNarrations(wrapper));
     }
-    // ② turns 对象数组
+    // ③ turns 对象数组
     if (Array.isArray(wrapper.turns) && wrapper.turns.length > 0) {
       const expanded: StoryTurn[] = [];
       for (const item of wrapper.turns) {
@@ -713,6 +848,11 @@ export async function runLLMBatch(opts: {
     const turns = parseEventJsonBatch(raw);
     if (turns.length === 0) {
       console.warn("[runLLMBatch] 解析失败，原始输出：", raw);
+      const recovered = adaptRawTextToTurns(raw);
+      if (recovered.length > 0) {
+        console.warn("[runLLMBatch] 已将非结构化输出按自然正文拆分为短句队列。");
+        return { raw, turns: recovered };
+      }
       return { raw, turns: [fallbackTurn("AI 输出未通过 JSON 校验", raw)] };
     }
     return { raw, turns };
@@ -720,6 +860,25 @@ export async function runLLMBatch(opts: {
     const msg = e instanceof Error ? e.message : String(e);
     return { raw: "", turns: [fallbackTurn(`LLM 调用失败：${msg}`)] };
   }
+}
+
+function adaptRawTextToTurns(raw: string): StoryTurn[] {
+  const text = stripGeneratedTextPrefix(raw);
+  if (!text || looksLikeOnlyBrokenJson(text)) return [];
+  return adaptNaturalTextToStoryTurns(text);
+}
+
+function looksLikeOnlyBrokenJson(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  const withoutTags = trimmed
+    .replace(/^<event_json>/i, "")
+    .replace(/<\/event_json>$/i, "")
+    .trim();
+  if (!withoutTags) return true;
+  const startsStructured = /^[{\[]/.test(withoutTags);
+  const hasNaturalSentence = /[。！？!?「」“”]/.test(withoutTags);
+  return startsStructured && !hasNaturalSentence;
 }
 
 // 简单文本调用（不要求 <event_json>），用于摘要 / 结局小传 / 随机角色卡

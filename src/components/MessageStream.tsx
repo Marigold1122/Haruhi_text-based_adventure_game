@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StoryTurn, TimeAdvance } from "@/types/turn";
 import { ThinkingTimer } from "./ThinkingTimer";
 
@@ -41,12 +41,17 @@ export function MessageStream({
 }: Props) {
   const [editingLatest, setEditingLatest] = useState(false);
   const [draftNarration, setDraftNarration] = useState("");
+  const bottomRef = useRef<HTMLDivElement | null>(null);
   const latestIndex = turns.length - 1;
 
   useEffect(() => {
     setEditingLatest(false);
     setDraftNarration(turns[latestIndex]?.narration ?? "");
   }, [latestIndex, turns]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [turns.length, pendingUserAction, loading]);
 
   function saveLatestEdit(turn: StoryTurn) {
     onUpdateLatest?.({ ...turn, narration: draftNarration });
@@ -171,6 +176,8 @@ export function MessageStream({
           <ThinkingTimer active={loading} />
         </div>
       )}
+
+      <div ref={bottomRef} aria-hidden="true" />
     </div>
   );
 }

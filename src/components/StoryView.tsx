@@ -650,6 +650,9 @@ function isSillyTavernMode(mode: PromptMode): boolean {
 }
 
 function renderTurnForPrompt(turn: StoryTurn): string {
+  const currentLine = turn.speaker
+    ? `${turn.speaker}${turn.mood ? `（${turn.mood}）` : ""}：「${turn.narration}」`
+    : turn.narration;
   const dialogue = turn.dialogue
     .map((line) => {
       const text = line.text.trim();
@@ -658,7 +661,7 @@ function renderTurnForPrompt(turn: StoryTurn): string {
       return speaker ? `${speaker}: ${text}` : text;
     })
     .filter(Boolean);
-  return [turn.narration, ...dialogue].filter((part) => part.trim()).join("\n\n");
+  return [currentLine, ...dialogue].filter((part) => part.trim()).join("\n\n");
 }
 
 function renderBatchForPrompt(batch: StoryTurn[]): string {

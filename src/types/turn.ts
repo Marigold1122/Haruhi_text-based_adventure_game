@@ -8,6 +8,17 @@ export type DialogueLine = {
   text: string;
 };
 
+export type VoiceCue = {
+  /** 给 TTS / 表演层使用，不直接写进正文 */
+  tone?: string;
+  emotion?: string;
+  delivery?: string;
+  speed?: string;
+  volume?: string;
+  intensity?: number;
+  pauseAfterMs?: number;
+};
+
 export type StateChanges = {
   haruhiSatisfactionDelta?: number;
   worldStabilityDelta?: number;
@@ -52,6 +63,12 @@ export type StoryTurn = {
 
   /** 仅 dialogue 段使用：说话语气标签（"兴奋"、"紧张"、"标准微笑"等） */
   // mood 已在上方独立字段——dialogue 段沿用同一字段表达语气
+
+  /**
+   * TTS / 表演元数据。只给系统使用，不应直接显示在正文里。
+   * dialogue 段优先由 LLM 的 tone / emotion / delivery 等字段填充。
+   */
+  tts?: VoiceCue;
 
   /**
    * 旧的 dialogue 数组（已废弃，保留向前兼容旧存档）。
