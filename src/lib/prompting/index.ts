@@ -15,6 +15,7 @@ import { filterLoreForSillyTavernPresetMode } from "./conflictPolicy";
 import { renderRuntimeWorldInfo } from "./runtimeContext";
 import { buildSillyTavernNaturalPrompt } from "./stNaturalPromptEngine";
 import type { PromptBuildTrace, PromptMode } from "./types";
+import type { CanonEvent } from "@/data/canonTimeline";
 
 export type PromptBuildInput = {
   mode: PromptMode;
@@ -30,6 +31,8 @@ export type PromptBuildInput = {
   sceneCast?: string;
   timelineContext?: string;
   identityGuide?: string;
+  /** 若本批被原作时间线强制驱动，这是必须叙述的焦点 canon event */
+  canonFocus?: CanonEvent;
 };
 
 export type PromptBuildOutput = {
@@ -65,6 +68,7 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
     sceneCast: input.sceneCast,
     timelineContext: input.timelineContext,
     identityGuide: input.identityGuide,
+    canonFocus: input.canonFocus,
   });
 
   const markerContext = {

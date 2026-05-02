@@ -102,8 +102,9 @@ export function renderAuthorsNote(opts: {
   sceneCast?: string;
   timelineContext?: string;
   identityGuide?: string;
+  canonFocus?: import("@/data/canonTimeline").CanonEvent;
 }): string {
-  const { preset, state, sceneCast, timelineContext, identityGuide } = opts;
+  const { preset, state, sceneCast, timelineContext, identityGuide, canonFocus } = opts;
 
   const worldStateBlock = [
     `· 春日满足度（隐藏）：${state.haruhiSatisfaction}`,
@@ -124,7 +125,7 @@ export function renderAuthorsNote(opts: {
   const timelineBlock = timelineContext ?? "（未配置时间表）";
   const identityBlock = identityGuide ?? "（未配置身份指引）";
 
-  return preset.authors_note_template
+  const rendered = preset.authors_note_template
     .replace(/\{\{date\}\}/g, state.date.display)
     .replace(/\{\{flow\}\}/g, flowLabel(state.flow))
     .replace(/\{\{identity\}\}/g, identityLabel(state.identity))
@@ -133,6 +134,54 @@ export function renderAuthorsNote(opts: {
     .replace(/\{\{scene_cast\}\}/g, sceneCastBlock)
     .replace(/\{\{timeline\}\}/g, timelineBlock)
     .replace(/\{\{identity_guide\}\}/g, identityBlock);
+
+  if (canonFocus) {
+    return [
+      rendered,
+      "",
+      renderCanonFocusBlock(canonFocus, state.identity),
+    ].join("\n");
+  }
+  return rendered;
+}
+
+/** 把强制触发的 canon event 渲染成"本轮必须叙述的焦点"块。原作时间线硬约束 + 玩家自由度并存。 */
+function renderCanonFocusBlock(
+  e: import("@/data/canonTimeline").CanonEvent,
+  identity: WorldState["identity"],
+): string {
+  return [
+    "[Canon Focus · 本轮必须叙述的原作主线事件]",
+    `事件：${e.title}（${e.date.iso}）`,
+    `卷次：第 ${e.volume} 卷`,
+    e.location ? `地点：${e.location}` : "",
+    `涉及角色：${e.participants.join("、")}`,
+    `事件概要：${e.summary}`,
+    `主线作用：${e.narrativeFunction}`,
+    "",
+    "【硬约束 · 事件本体不可改变】",
+    "  · 这一事件在原作中就发生于今天此刻，不容跳过、不容错位、不容篡改其客观结果",
+    "  · 关键事实（谁说了什么宣言、谁加入了团、谁救了谁、世界是否被改写）必须保持原作走向",
+    "",
+    "【自由度 · 玩家如何参与高度可变】",
+    "  · canon = 事件的客观发生 + 关键结果；自由度 = 玩家如何进入场景、如何反应、看到多少、之后做什么",
+    "  · 玩家可以从多角度切入：身处现场 / 路过隔壁班 / 听到走廊回响 / 事后从八卦得知；反应方式自由（旁观 / 凑近 / 主动搭话 / 装作没看见 / 找朋友议论）",
+    "  · 副线行为不改变 canon 走向，但有真实后果：决定玩家的人际网与未来 identity 升级路径",
+    "",
+    "【慢镜头展开 · canon 事件应跨多个短批次】",
+    "  · canon 事件是玩家熟悉、期待的高潮节点——不要在一个批次里草草带过，应慢镜头分多批展开",
+    "  · 每批 narrations **4-8 段**（比日常 12-18 段更短），让玩家在同一 canon 事件里得到 3-6 次互动机会",
+    "  · 每批以一个交互收尾，但分量可大可小：",
+    "    - 大部分是【轻交互】（如何反应 / 看哪里 / 说什么 / 要不要起身），影响人际细节但不改变 canon",
+    "    - 关键节点才是【真分支】（是否主动接近春日 / 是否相信春日），决定后续 identity 与人际起点",
+    "  · 一个 canon 事件场景：轻交互占多数 3-5 次，真分支只在关键转折出现 1-2 次",
+    "",
+    "【批末选项必须有真实差异】",
+    "  · choices 不要写「围观 / 沉默 / 等等看」这种装饰性空选项",
+    "  · 即使是轻交互，每个选项也要对应不同的下一批开场（不同 NPC 反应 / 不同细节 / 不同氛围）",
+    "",
+    `玩家身份=${identity}（visibility=${e.visibility}）：超自然事件对路人玩家间接呈现，不得直接命名「闭锁空间 / 思念体 / 神人」等术语。`,
+  ].filter(Boolean).join("\n");
 }
 
 function flowLabel(flow: WorldState["flow"]): string {
@@ -179,8 +228,9 @@ export function assemblePrompt(opts: {
   sceneCast?: string;            // 本轮场景人员清单（高优先级注入）
   timelineContext?: string;      // 当前日期附近的 SOS 团世界事件
   identityGuide?: string;        // 当前身份对应的剧情指引
+  canonFocus?: import("@/data/canonTimeline").CanonEvent;
 }): AssembledPrompt {
-  const { card, lorebook, preset, state, history, summary, userInput, sceneCast, timelineContext, identityGuide } = opts;
+  const { card, lorebook, preset, state, history, summary, userInput, sceneCast, timelineContext, identityGuide, canonFocus } = opts;
   const cardData = card.data;
 
   // 取最近 N 轮文本作为关键词扫描素材（含本轮输入）
@@ -193,7 +243,7 @@ export function assemblePrompt(opts: {
   const loreBefore = lore.filter((e) => e.position !== "after_char");
   const loreAfter = lore.filter((e) => e.position === "after_char" || e.position === undefined);
 
-  const authorsNote = renderAuthorsNote({ preset, state, sceneCast, timelineContext, identityGuide });
+  const authorsNote = renderAuthorsNote({ preset, state, sceneCast, timelineContext, identityGuide, canonFocus });
 
   // ===== ① + ② + ③(before_char) + ④ 合并到一条 system 消息 =====
   // 这是酒馆默认行为：char 描述与世界书 before_char 部分都属于"角色之前"的固定上下文。

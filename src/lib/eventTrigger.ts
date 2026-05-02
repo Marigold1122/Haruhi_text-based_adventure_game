@@ -10,13 +10,34 @@
 import type { WorldState } from "@/types/worldState";
 import type { EventPresetKind } from "@/types/preset";
 import { pickChainForState } from "@/data/eventChains";
+import {
+  getMainLinePendingTriggers,
+  type CanonEvent,
+} from "@/data/canonTimeline";
 
 export type TriggerDecision = {
   eventKind: EventPresetKind;
   // 若触发新事件链，这里给出建议链 id 与节数；由上层决定是否真正进入
   proposedChain?: { id: string; totalSteps: number };
   reason: string;
+  /**
+   * 若本批被原作时间线强制驱动，这里给出焦点 canon event。
+   * 上层（StoryView）应：① 把它注入 prompt 作为本批必须叙述的事件；
+   * ② 本批完成后把 id 追加到 state.triggeredCanonEvents 以避免重复触发。
+   */
+  canonFocus?: CanonEvent;
 };
+
+/**
+ * canon event.visibility → preset eventKind 的映射。
+ * 给被强制触发的批次分配合适的 preset，让 LLM 调到正确语气的系统提示。
+ */
+function presetKindForCanonEvent(e: CanonEvent): EventPresetKind {
+  if (e.visibility === "supernatural") return "supernatural";
+  if (e.chainId) return "supernatural"; // 事件链事件统一走 supernatural preset
+  // public / sos_internal 大多数算日常 + encounter 类
+  return "encounter";
+}
 
 // 基础事件类型概率表（按身份）
 // 数字之和应为 1.0；未列出的身份走 passerby 默认值
@@ -44,6 +65,23 @@ const baseProb: Record<string, Record<EventPresetKind, number>> = {
 };
 
 export function decideEvent(state: WorldState, rng: () => number = Math.random): TriggerDecision {
+  // 最高优先级：原作时间线 main_line 事件——日期到了必须触发，按时间顺序依次发生。
+  // 这一段先于任何 RNG / 事件链判定，保证主线无论玩家做了什么选择都按原作推进。
+  const triggered = new Set(state.triggeredCanonEvents);
+  const pending = getMainLinePendingTriggers(state.date.iso, triggered);
+  if (pending.length > 0) {
+    const focus = pending[0]; // 已按 ISO 升序排序，取最早的一条
+    const proposedChain = focus.chainId
+      ? { id: focus.chainId, totalSteps: 4 }
+      : undefined;
+    return {
+      eventKind: presetKindForCanonEvent(focus),
+      proposedChain,
+      reason: `canon main_line forced: ${focus.id} (${focus.date.iso})`,
+      canonFocus: focus,
+    };
+  }
+
   // 已在事件链中：直接返回 supernatural（preset 路由会接管）
   if (state.activeChain) {
     return { eventKind: "supernatural", reason: "in active chain" };

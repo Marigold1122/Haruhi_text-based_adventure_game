@@ -1,4 +1,5 @@
 import type { StartingPointId, WorldState } from "@/types/worldState";
+import { preTriggeredEventIdsAsOf } from "./canonTimeline";
 
 export type StartingPointDef = {
   id: StartingPointId;
@@ -55,6 +56,7 @@ export const startingPoints: StartingPointDef[] = [
       flags: ["entrance_day"],
       clues: [],
       pastEvents: [],
+      triggeredCanonEvents: preTriggeredEventIdsAsOf("2002-04-08"),
       activeChain: null,
       startingPoint: "north_high_entrance",
     },
@@ -94,6 +96,7 @@ export const startingPoints: StartingPointDef[] = [
         "长门递给我一张奇怪的书签",
       ],
       pastEvents: ["凉宫春日的入学自我介绍", "电研社事件"],
+      triggeredCanonEvents: preTriggeredEventIdsAsOf("2002-05-13"),
       activeChain: null,
       startingPoint: "sos_founded",
     },
@@ -139,6 +142,7 @@ export const startingPoints: StartingPointDef[] = [
         "棒球大会",
         "拍摄朝比奈实玖瑠的冒险 episode 00",
       ],
+      triggeredCanonEvents: preTriggeredEventIdsAsOf("2002-08-17"),
       activeChain: null,
       startingPoint: "summer_island",
     },

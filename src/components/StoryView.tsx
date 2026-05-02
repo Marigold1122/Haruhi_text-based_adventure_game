@@ -12,7 +12,7 @@ import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
 import { type SummaryState, emptySummary, maybeUpdateSummary, tailHistory } from "@/lib/summary";
 import { startingPointById } from "@/data/startingPoints";
-import { renderTimelineContext } from "@/data/worldTimeline";
+import { renderTimelineContext } from "@/data/canonTimeline";
 import { renderIdentityGuide } from "@/data/identityGuide";
 import { rollEnding, generateEndingNarrative, type EndingTrigger } from "@/lib/ending";
 import { save, load, clear, type SaveBlob } from "@/lib/storage";
@@ -274,7 +274,13 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       sceneCast,
       timelineContext,
       identityGuide,
+      canonFocus: decision.canonFocus,
     });
+    if (decision.canonFocus && typeof console !== "undefined") {
+      console.log(
+        `[fetchBatch] 原作时间线驱动：本批焦点 = ${decision.canonFocus.id}（${decision.canonFocus.title}，${decision.canonFocus.date.iso}）`,
+      );
+    }
     setTrace(withRuntimeWarnings(built.trace, promptRuntime));
 
     let raw = "";
@@ -361,6 +367,14 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
         { ...advanced, date: pushDate(advanced.date, t.timeAdvance), flow: t.pace === "scene" ? "chain" : "weekly" },
         t,
       );
+    }
+
+    // 若本批被原作时间线强制驱动 → 把焦点 canon event id 标记为已触发，避免重复
+    if (decision.canonFocus) {
+      advanced = {
+        ...advanced,
+        triggeredCanonEvents: [...advanced.triggeredCanonEvents, decision.canonFocus.id],
+      };
     }
 
     // 异步 Rolling Summary

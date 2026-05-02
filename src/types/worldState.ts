@@ -64,6 +64,14 @@ export type WorldState = {
   clues: string[];
   pastEvents: string[];          // 已发生的事件标题列表（盖棺定论时用）
 
+  /**
+   * 已经被原作时间线触发过的 canon event id 列表。
+   * 当 state.date 跨过某个 main_line canon event 的日期、且该 id 不在此列表中，
+   * eventTrigger 会强制把它作为本批的剧情焦点（保证主线必然按时发生）。
+   * 触发后 id 追加到此列表，避免重复触发。
+   */
+  triggeredCanonEvents: string[];
+
   // 当前事件链状态机
   activeChain: EventChainState | null;
 
