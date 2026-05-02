@@ -15,7 +15,10 @@ export type StoredSillyTavernPreset = {
 export function loadPromptMode(): PromptMode {
   try {
     const raw = localStorage.getItem(MODE_KEY);
-    return raw === "sillytavern-preset" ? "sillytavern-preset" : "legacy";
+    if (raw === "sillytavern-preset" || raw === "sillytavern-preset-natural") {
+      return raw;
+    }
+    return "legacy";
   } catch {
     return "legacy";
   }

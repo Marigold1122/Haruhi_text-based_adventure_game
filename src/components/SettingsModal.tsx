@@ -68,7 +68,7 @@ export function SettingsModal({ initial, onClose }: Props) {
       };
       saveStoredSillyTavernPreset(stored);
       setStoredPreset(stored);
-      updatePromptMode("sillytavern-preset");
+      updatePromptMode("sillytavern-preset-natural");
       setPresetMsg(`已导入：${parsed.summary.name}`);
     } catch (e) {
       setPresetMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`);
@@ -86,7 +86,7 @@ export function SettingsModal({ initial, onClose }: Props) {
   function updateSillyTavernPreset(next: StoredSillyTavernPreset, message: string) {
     saveStoredSillyTavernPreset(next);
     setStoredPreset(next);
-    updatePromptMode("sillytavern-preset");
+    updatePromptMode("sillytavern-preset-natural");
     setPresetMsg(message);
   }
 
@@ -201,10 +201,11 @@ export function SettingsModal({ initial, onClose }: Props) {
             onChange={(e) => updatePromptMode(e.target.value as PromptMode)}
           >
             <option value="legacy">Legacy：项目内置 promptRouter</option>
-            <option value="sillytavern-preset">SillyTavern Preset：按 prompt_order 编译</option>
+            <option value="sillytavern-preset">ST Preset JSON Contract：按 prompt_order 编译后要求 event_json</option>
+            <option value="sillytavern-preset-natural">ST Preset Natural Adapter：先生成正文再转 StoryTurn</option>
           </select>
           <small className="hint">
-            ST 模式会旁路项目内置文风 preset，仅保留最小 event_json 接口契约。
+            Natural Adapter 更接近酒馆真实流程；JSON Contract 保留为稳定兜底。
           </small>
         </label>
 
@@ -232,7 +233,7 @@ export function SettingsModal({ initial, onClose }: Props) {
                 {storedPreset.summary.sourceMaxTokens ? ` · source max tokens ${storedPreset.summary.sourceMaxTokens}` : ""}
               </small>
             ) : (
-              <small className="hint">未导入 preset。这里不会再隐藏；选择 JSON 后会自动启用 ST 模式并显示条目设置。</small>
+              <small className="hint">未导入 preset。选择 JSON 后会自动启用 Natural Adapter 并显示条目设置。</small>
             )}
           </label>
 

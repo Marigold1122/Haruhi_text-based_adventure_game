@@ -16,9 +16,13 @@ export function StatusPanel({ state, characterName, trace, summaryStatus, queueL
   return (
     <aside className="status-panel">
       <section>
-        <h4>第一人称 POV</h4>
+        <h4>{trace?.mode === "sillytavern-preset-natural" ? "当前主角" : "第一人称 POV"}</h4>
         <p className="big">{characterName}</p>
-        <p className="muted">叙述以「{characterName}」的「我」展开 · {identityLabel(state.identity)}</p>
+        <p className="muted">
+          {trace?.mode === "sillytavern-preset-natural"
+            ? `ST natural 模式尊重 preset 视角 · ${identityLabel(state.identity)}`
+            : `叙述以「${characterName}」的「我」展开 · ${identityLabel(state.identity)}`}
+        </p>
       </section>
 
       <section>
@@ -89,15 +93,24 @@ export function StatusPanel({ state, characterName, trace, summaryStatus, queueL
         <section className="trace">
           <h4>调度信息（开发）</h4>
           <p className="muted">Mode: {trace.mode}</p>
+          {trace.outputMode && (
+            <p className="muted">Output: {trace.outputMode}{trace.adapterMode ? ` -> ${trace.adapterMode} adapter` : ""}</p>
+          )}
           <p className="muted">Preset: {trace.presetName}</p>
           {trace.promptOrderCharacterId !== undefined && (
             <p className="muted">ST order: {trace.promptOrderCharacterId}</p>
+          )}
+          {trace.promptOrderSource && (
+            <p className="muted small">Order source: {trace.promptOrderSource}</p>
           )}
           {trace.enabledPromptCount !== undefined && (
             <p className="muted">Enabled prompts: {trace.enabledPromptCount}</p>
           )}
           {trace.messageCount !== undefined && (
             <p className="muted">Messages: {trace.messageCount}</p>
+          )}
+          {trace.naturalTextLength !== undefined && (
+            <p className="muted small">Natural text: {trace.naturalTextLength} chars</p>
           )}
           <p className="muted">激活条目：</p>
           <ul className="trace-list">
@@ -117,6 +130,12 @@ export function StatusPanel({ state, characterName, trace, summaryStatus, queueL
           ) : null}
           {trace.regexHits?.length ? (
             <p className="muted small">Regex hits: {trace.regexHits.slice(0, 4).join(" / ")}</p>
+          ) : null}
+          {trace.macroVariables?.length ? (
+            <p className="muted small">Macro vars: {trace.macroVariables.slice(0, 6).join(" / ")}</p>
+          ) : null}
+          {trace.unresolvedMacros?.length ? (
+            <p className="muted small">Unresolved macros: {trace.unresolvedMacros.slice(0, 4).join(" / ")}</p>
           ) : null}
           {trace.filteredLoreEntries?.length ? (
             <p className="muted small">过滤条目：{trace.filteredLoreEntries.join("、")}</p>

@@ -69,11 +69,16 @@ export type SillyTavernPresetSummary = {
 };
 
 export type SillyTavernCompileTrace = {
-  mode: "sillytavern-preset";
+  mode: "sillytavern-preset" | "sillytavern-preset-natural";
   presetName: string;
+  outputMode?: "event-json" | "natural";
   promptOrderCharacterId?: number;
+  promptOrderSource?: string;
   enabledPromptCount: number;
   markerHits: string[];
+  macroHits?: string[];
+  macroVariables?: string[];
+  unresolvedMacros?: string[];
   regexHits?: string[];
   skippedPrompts: string[];
   warnings: string[];

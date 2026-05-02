@@ -2,10 +2,11 @@ import type { ChatMessage } from "@/types/turn";
 import { MINIMAL_EVENT_JSON_CONTRACT } from "@/lib/prompting/outputContract";
 import { mapSillyTavernSampling } from "./samplingMapper";
 import {
-  applyCommonSillyTavernMacros,
   resolveSillyTavernMarker,
   type MarkerResolverContext,
 } from "./markerResolver";
+import { applySillyTavernMacros, createMacroState, type SillyTavernMacroState } from "./macroEngine";
+import { selectSillyTavernPromptOrder } from "./promptOrderSelector";
 import {
   applySillyTavernRegexScripts,
   SILLYTAVERN_REGEX_PLACEMENT,
@@ -14,13 +15,16 @@ import type {
   SillyTavernChatCompletionPreset,
   SillyTavernCompiledPrompt,
   SillyTavernPrompt,
-  SillyTavernPromptOrder,
 } from "./presetTypes";
 
 export type SillyTavernPresetCompileOptions = {
   presetName?: string;
   preferredCharacterId?: number;
   maxTokensCap?: number;
+  outputMode?: "event-json" | "natural";
+  appendOutputContract?: boolean;
+  applyUserInputRegex?: boolean;
+  extraRegexHits?: string[];
 };
 
 export function compileSillyTavernPresetPrompt(opts: {
@@ -34,23 +38,30 @@ export function compileSillyTavernPresetPrompt(opts: {
   const skippedPrompts: string[] = [];
   const prompts = Array.isArray(preset.prompts) ? preset.prompts : [];
   const promptById = new Map<string, SillyTavernPrompt>();
-  const userInputRegex = applySillyTavernRegexScripts(
-    opts.markerContext.currentUserInput,
-    preset.extensions?.regex_scripts,
-    SILLYTAVERN_REGEX_PLACEMENT.USER_INPUT,
-    { depth: 0 },
-  );
+  const shouldApplyInputRegex = options?.applyUserInputRegex !== false;
+  const userInputRegex = shouldApplyInputRegex
+    ? applySillyTavernRegexScripts(
+        opts.markerContext.currentUserInput,
+        preset.extensions?.regex_scripts,
+        SILLYTAVERN_REGEX_PLACEMENT.USER_INPUT,
+        { depth: 0 },
+      )
+    : { text: opts.markerContext.currentUserInput, applied: [], warnings: [] };
   const markerContext: MarkerResolverContext = {
     ...opts.markerContext,
     currentUserInput: userInputRegex.text,
   };
   warnings.push(...userInputRegex.warnings);
+  const macroState = createMacroState();
 
   for (const prompt of prompts) {
     if (prompt.identifier) promptById.set(prompt.identifier, prompt);
   }
 
-  const order = choosePromptOrder(preset.prompt_order, options?.preferredCharacterId);
+  const orderSelection = selectSillyTavernPromptOrder(preset.prompt_order, {
+    preferredCharacterId: options?.preferredCharacterId,
+  });
+  const order = orderSelection.order;
   const orderedItems = order
     ? order.order.filter((item) => item.enabled)
     : prompts
@@ -66,7 +77,7 @@ export function compileSillyTavernPresetPrompt(opts: {
       continue;
     }
 
-    const compiled = compilePrompt(prompt, markerContext, markerHits);
+    const compiled = compilePrompt(prompt, markerContext, markerHits, macroState);
     if (!compiled.trim()) {
       skippedPrompts.push(prompt.name || prompt.identifier || "(empty prompt)");
       continue;
@@ -86,63 +97,56 @@ export function compileSillyTavernPresetPrompt(opts: {
     warnings.push("prompt_order 未启用 chatHistory marker，已追加当前用户输入作为兜底。");
   }
 
-  pushMergedMessage(messages, {
-    role: "system",
-    content: MINIMAL_EVENT_JSON_CONTRACT,
-  });
+  if (options?.appendOutputContract !== false) {
+    pushMergedMessage(messages, {
+      role: "system",
+      content: MINIMAL_EVENT_JSON_CONTRACT,
+    });
+  }
 
   const sampling = mapSillyTavernSampling(preset, { maxTokensCap: options?.maxTokensCap });
   const presetName = options?.presetName || preset.name || "SillyTavern Preset";
+  const outputMode = options?.outputMode ?? "event-json";
 
   return {
     messages,
     sampling,
     trace: {
-      mode: "sillytavern-preset",
+      mode: outputMode === "natural" ? "sillytavern-preset-natural" : "sillytavern-preset",
       presetName,
+      outputMode,
       promptOrderCharacterId: order?.character_id,
+      promptOrderSource: orderSelection.source,
       enabledPromptCount: orderedItems.length,
       markerHits,
-      regexHits: userInputRegex.applied,
+      macroHits: macroState.hits,
+      macroVariables: Object.keys(macroState.variables),
+      unresolvedMacros: macroState.unresolved,
+      regexHits: [...new Set([...(options?.extraRegexHits ?? []), ...userInputRegex.applied])],
       skippedPrompts,
-      warnings,
+      warnings: [...warnings, ...macroState.warnings],
       messageCount: messages.length,
       sampling,
     },
   };
 }
 
-function choosePromptOrder(
-  orders: SillyTavernPromptOrder[] | undefined,
-  preferredCharacterId?: number,
-): SillyTavernPromptOrder | null {
-  if (!Array.isArray(orders) || orders.length === 0) return null;
-  if (preferredCharacterId !== undefined) {
-    const preferred = orders.find((order) => order.character_id === preferredCharacterId);
-    if (preferred) return preferred;
-  }
-  return [...orders].sort((a, b) => countEnabled(b) - countEnabled(a))[0] ?? null;
-}
-
-function countEnabled(order: SillyTavernPromptOrder): number {
-  return order.order.filter((item) => item.enabled).length;
-}
-
 function compilePrompt(
   prompt: SillyTavernPrompt,
   context: MarkerResolverContext,
   markerHits: string[],
+  macroState: SillyTavernMacroState,
 ): string {
   if (prompt.marker && prompt.identifier) {
     const resolved = resolveSillyTavernMarker(prompt.identifier, context);
     if (resolved.handled) {
       markerHits.push(prompt.identifier);
-      return resolved.content;
+      return applySillyTavernMacros(resolved.content, context, macroState, { allowSetVar: false });
     }
   }
 
   if (typeof prompt.content !== "string") return "";
-  return applyCommonSillyTavernMacros(prompt.content, context);
+  return applySillyTavernMacros(prompt.content, context, macroState, { allowSetVar: true });
 }
 
 function mapRole(role: SillyTavernPrompt["role"]): ChatMessage["role"] {

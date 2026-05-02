@@ -4,6 +4,9 @@ import type { SillyTavernRegexScript } from "./presetTypes";
 export const SILLYTAVERN_REGEX_PLACEMENT = {
   USER_INPUT: 1,
   AI_OUTPUT: 2,
+  SLASH_COMMAND: 3,
+  WORLD_INFO: 5,
+  REASONING: 6,
 } as const;
 
 export type RegexApplyResult = {

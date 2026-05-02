@@ -4,11 +4,16 @@ import type { Lorebook, LoreEntry } from "@/types/lorebook";
 import type { EventPresetKind, SamplingParams } from "@/types/preset";
 import type { ChatMessage } from "@/types/turn";
 import type { WorldState } from "@/types/worldState";
-import type { SillyTavernChatCompletionPreset } from "@/lib/sillytavern/presetTypes";
+import type { SillyTavernChatCompletionPreset, SillyTavernRegexScript } from "@/lib/sillytavern/presetTypes";
 import { compileSillyTavernPresetPrompt } from "@/lib/sillytavern/presetCompiler";
+import {
+  applySillyTavernRegexScripts,
+  SILLYTAVERN_REGEX_PLACEMENT,
+} from "@/lib/sillytavern/regexEngine";
 import { buildLegacyPrompt } from "./legacyPromptEngine";
 import { filterLoreForSillyTavernPresetMode } from "./conflictPolicy";
 import { renderRuntimeWorldInfo } from "./runtimeContext";
+import { buildSillyTavernNaturalPrompt } from "./stNaturalPromptEngine";
 import type { PromptBuildTrace, PromptMode } from "./types";
 
 export type PromptBuildInput = {
@@ -34,7 +39,7 @@ export type PromptBuildOutput = {
 };
 
 export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
-  if (input.mode !== "sillytavern-preset" || !input.stPreset) {
+  if (input.mode === "legacy" || !input.stPreset) {
     return buildLegacyPrompt(input);
   }
 
@@ -52,6 +57,9 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
   const filtered = filterLoreForSillyTavernPresetMode(selectedLore);
   const loreBefore = filtered.entries.filter((entry) => entry.position !== "after_char");
   const loreAfter = filtered.entries.filter((entry) => entry.position === "after_char" || entry.position === undefined);
+  const worldInfoRegexHits: string[] = [];
+  const worldInfoRegexWarnings: string[] = [];
+  const regexScripts = input.stPreset.extensions?.regex_scripts;
   const runtimeWorldInfo = renderRuntimeWorldInfo({
     state: input.state,
     sceneCast: input.sceneCast,
@@ -59,18 +67,44 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
     identityGuide: input.identityGuide,
   });
 
+  const markerContext = {
+    card: input.card,
+    history: input.history,
+    currentUserInput: input.userInput,
+    worldInfoBefore: renderLoreEntries(loreBefore, regexScripts, worldInfoRegexHits, worldInfoRegexWarnings),
+    worldInfoAfter: [
+      renderLoreEntries(loreAfter, regexScripts, worldInfoRegexHits, worldInfoRegexWarnings),
+      runtimeWorldInfo,
+    ].filter(Boolean).join("\n\n"),
+    personaDescription: renderPersonaDescription(input.card),
+    userName: "User",
+  };
+  const activeLoreEntries = filtered.entries.map((entry) => entry.name ?? entry.keys[0] ?? "(unnamed)");
+
+  if (input.mode === "sillytavern-preset-natural") {
+    const natural = buildSillyTavernNaturalPrompt({
+      preset: input.stPreset,
+      presetName: input.stPresetName,
+      markerContext,
+      activeLoreEntries,
+      filteredLoreEntries: filtered.filteredNames,
+      worldInfoRegexHits,
+    });
+    return {
+      ...natural,
+      trace: {
+        ...natural.trace,
+        warnings: [...(natural.trace.warnings ?? []), ...worldInfoRegexWarnings],
+      },
+    };
+  }
+
   const compiled = compileSillyTavernPresetPrompt({
     preset: input.stPreset,
-    markerContext: {
-      card: input.card,
-      history: input.history,
-      currentUserInput: input.userInput,
-      worldInfoBefore: renderLoreEntries(loreBefore),
-      worldInfoAfter: [renderLoreEntries(loreAfter), runtimeWorldInfo].filter(Boolean).join("\n\n"),
-      personaDescription: renderPersonaDescription(input.card),
-    },
+    markerContext,
     options: {
       presetName: input.stPresetName,
+      extraRegexHits: worldInfoRegexHits,
     },
   });
 
@@ -79,8 +113,9 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
     sampling: compiled.sampling,
     trace: {
       ...compiled.trace,
-      activeLoreEntries: filtered.entries.map((entry) => entry.name ?? entry.keys[0] ?? "(unnamed)"),
+      activeLoreEntries,
       filteredLoreEntries: filtered.filteredNames,
+      warnings: [...(compiled.trace.warnings ?? []), ...worldInfoRegexWarnings],
     },
   };
 }
@@ -101,10 +136,25 @@ function convertCharacterBookEntry(entry: CharacterBookEntry): LoreEntry {
   return entry as LoreEntry;
 }
 
-function renderLoreEntries(entries: LoreEntry[]): string {
+function renderLoreEntries(
+  entries: LoreEntry[],
+  regexScripts: SillyTavernRegexScript[] | undefined,
+  regexHits: string[],
+  regexWarnings: string[],
+): string {
   return entries.map((entry) => {
     const title = entry.name || entry.keys[0] || "Entry";
-    return `# ${title}\n${entry.content}`;
+    const regexed = applySillyTavernRegexScripts(
+      entry.content,
+      regexScripts,
+      SILLYTAVERN_REGEX_PLACEMENT.WORLD_INFO,
+      { depth: 0 },
+    );
+    regexed.applied.forEach((name) => {
+      if (!regexHits.includes(name)) regexHits.push(name);
+    });
+    regexWarnings.push(...regexed.warnings);
+    return `# ${title}\n${regexed.text}`;
   }).join("\n\n");
 }
 

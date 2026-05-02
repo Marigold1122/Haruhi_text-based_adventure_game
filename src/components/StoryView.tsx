@@ -5,7 +5,7 @@ import type { Lorebook } from "@/types/lorebook";
 import type { WorldState } from "@/types/worldState";
 import type { ChatMessage, StoryTurn } from "@/types/turn";
 
-import { runLLMBatch } from "@/lib/llm";
+import { fallbackTurn, runLLMBatch, runLLMText } from "@/lib/llm";
 import { applyTurn } from "@/lib/worldState";
 import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
@@ -18,8 +18,13 @@ import { save, load, clear, type SaveBlob } from "@/lib/storage";
 import { loadSettings } from "@/lib/settings";
 import { buildPromptForTurn } from "@/lib/prompting";
 import type { PromptBuildTrace, PromptMode } from "@/lib/prompting/types";
+import { adaptNaturalTextToStoryTurn } from "@/lib/prompting/storyTurnAdapter";
 import { parseSillyTavernPresetJson } from "@/lib/sillytavern/presetParser";
-import { applySillyTavernRegexToTurn } from "@/lib/sillytavern/regexEngine";
+import {
+  applySillyTavernRegexScripts,
+  applySillyTavernRegexToTurn,
+  SILLYTAVERN_REGEX_PLACEMENT,
+} from "@/lib/sillytavern/regexEngine";
 import {
   loadPromptMode,
   loadStoredSillyTavernPreset,
@@ -211,26 +216,57 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     });
     setTrace(withRuntimeWarnings(built.trace, promptRuntime));
 
-    const { raw, turns: rawBatch } = await runLLMBatch({
-      messages: built.messages,
-      sampling: built.sampling,
-    });
+    let raw = "";
+    let batch: StoryTurn[] = [];
+    if (built.trace.outputMode === "natural") {
+      try {
+        const rawNatural = await runLLMText({ messages: built.messages, sampling: built.sampling });
+        const outputRegex = applySillyTavernRegexScripts(
+          rawNatural,
+          promptRuntime.preset?.extensions?.regex_scripts,
+          SILLYTAVERN_REGEX_PLACEMENT.AI_OUTPUT,
+          { depth: 0 },
+        );
+        raw = outputRegex.text;
+        batch = [adaptNaturalTextToStoryTurn(raw)];
+        setTrace((prev) => prev ? ({
+          ...prev,
+          regexHits: [...new Set([...(prev.regexHits ?? []), ...outputRegex.applied])],
+          warnings: [...(prev.warnings ?? []), ...outputRegex.warnings],
+          naturalTextLength: raw.length,
+          adapterMode: "rule",
+        }) : prev);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        batch = [fallbackTurn(`LLM 调用失败：${msg}`)];
+        setTrace((prev) => prev ? ({
+          ...prev,
+          warnings: [...(prev.warnings ?? []), `natural 模式调用失败：${msg}`],
+          adapterMode: "rule",
+        }) : prev);
+      }
+    } else {
+      const { raw: llmRaw, turns: rawBatch } = await runLLMBatch({
+        messages: built.messages,
+        sampling: built.sampling,
+      });
+      raw = llmRaw;
 
-    // SillyTavern preset 的 regex_scripts：对每段 turn 跑一遍 AI 输出清洗
-    const regexHits = new Set<string>();
-    const regexWarnings: string[] = [];
-    const batch = rawBatch.map((t) => {
-      const r = applyPresetOutputRegex(t, promptRuntime);
-      r.applied.forEach((n) => regexHits.add(n));
-      regexWarnings.push(...r.warnings);
-      return r.turn;
-    });
-    if (regexHits.size || regexWarnings.length) {
-      setTrace((prev) => prev ? ({
-        ...prev,
-        regexHits: [...new Set([...(prev.regexHits ?? []), ...regexHits])],
-        warnings: [...(prev.warnings ?? []), ...regexWarnings],
-      }) : prev);
+      const regexHits = new Set<string>();
+      const regexWarnings: string[] = [];
+      batch = rawBatch.map((t) => {
+        const r = applyPresetOutputRegex(t, promptRuntime);
+        r.applied.forEach((n) => regexHits.add(n));
+        regexWarnings.push(...r.warnings);
+        return r.turn;
+      });
+      if (regexHits.size || regexWarnings.length) {
+        setTrace((prev) => prev ? ({
+          ...prev,
+          regexHits: [...new Set([...(prev.regexHits ?? []), ...regexHits])],
+          warnings: [...(prev.warnings ?? []), ...regexWarnings],
+        }) : prev);
+      }
     }
 
     // 调试可见：每批次实际段数 + 类型（旁白/对白）
@@ -252,7 +288,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const userMsg: ChatMessage = { role: "user", content: promptUser };
     const aiMsg: ChatMessage = {
       role: "assistant",
-      content: promptRuntime.mode === "sillytavern-preset" ? renderBatchForPrompt(batch) : raw,
+      content: isSillyTavernMode(promptRuntime.mode) ? renderBatchForPrompt(batch) : raw,
       parsed: batch[0],
     };
     const nextHistory = [...baseHistory, userMsg, aiMsg];
@@ -355,7 +391,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setHistory((prev) => replaceLastParsedAssistant(
       prev,
       updated,
-      promptRuntime.mode === "sillytavern-preset" ? renderTurnForPrompt(updated) : serializeTurn(updated),
+      isSillyTavernMode(promptRuntime.mode) ? renderTurnForPrompt(updated) : serializeTurn(updated),
     ));
   }
 
@@ -508,7 +544,7 @@ function loadPromptRuntime(): PromptRuntime {
   const mode = loadPromptMode();
   const stored = loadStoredSillyTavernPreset();
   if (!stored) {
-    return { mode, stored: null, preset: null, warnings: mode === "sillytavern-preset" ? ["已选择 ST 预设模式，但尚未导入 preset，当前轮次会回退 legacy。"] : [] };
+    return { mode, stored: null, preset: null, warnings: isSillyTavernMode(mode) ? ["已选择 ST 预设模式，但尚未导入 preset，当前轮次会回退 legacy。"] : [] };
   }
 
   try {
@@ -546,6 +582,10 @@ function applyPresetOutputRegex(
     return { turn, applied: [], warnings: [] };
   }
   return applySillyTavernRegexToTurn(turn, runtime.preset.extensions?.regex_scripts, { depth: 0 });
+}
+
+function isSillyTavernMode(mode: PromptMode): boolean {
+  return mode === "sillytavern-preset" || mode === "sillytavern-preset-natural";
 }
 
 function renderTurnForPrompt(turn: StoryTurn): string {

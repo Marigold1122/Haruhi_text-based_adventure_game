@@ -1,5 +1,6 @@
 import type { CharacterCardV2 } from "@/types/character";
 import type { ChatMessage } from "@/types/turn";
+import { applySillyTavernMacros, createMacroState } from "./macroEngine";
 
 export type MarkerResolverContext = {
   card: CharacterCardV2;
@@ -8,6 +9,8 @@ export type MarkerResolverContext = {
   worldInfoBefore: string;
   worldInfoAfter: string;
   personaDescription: string;
+  historyText?: string;
+  userName?: string;
 };
 
 export type MarkerResolution = {
@@ -31,7 +34,7 @@ export function resolveSillyTavernMarker(identifier: string, context: MarkerReso
     case "worldInfoAfter":
       return handled(context.worldInfoAfter);
     case "chatHistory":
-      return handled(renderChatHistory(context.history, context.currentUserInput));
+      return handled(context.historyText ?? renderChatHistory(context.history, context.currentUserInput));
     case "personaDescription":
       return handled(context.personaDescription);
     default:
@@ -40,22 +43,29 @@ export function resolveSillyTavernMarker(identifier: string, context: MarkerReso
 }
 
 export function applyCommonSillyTavernMacros(content: string, context: MarkerResolverContext): string {
-  const data = context.card.data;
-  return content
-    .replace(/\{\{char\}\}/g, data.name)
-    .replace(/\{\{user\}\}/g, data.name)
-    .replace(/\{\{input\}\}/g, context.currentUserInput)
-    .replace(/<USER>/g, data.name)
-    .replace(/<BOT>/g, data.name);
+  return applySillyTavernMacros(content, context, createMacroState(), { allowSetVar: false });
 }
 
 function renderChatHistory(history: ChatMessage[], currentUserInput: string): string {
   const lines = history.map((message) => {
     const label = message.role === "assistant" ? "assistant" : message.role;
-    return `[${label}]\n${message.content}`;
+    const content = message.parsed ? renderTurnForPrompt(message.parsed) : message.content;
+    return `[${label}]\n${content}`;
   });
   lines.push(`[user]\n${currentUserInput}`);
   return lines.join("\n\n");
+}
+
+function renderTurnForPrompt(turn: NonNullable<ChatMessage["parsed"]>): string {
+  const dialogue = turn.dialogue
+    .map((line) => {
+      const text = line.text.trim();
+      if (!text) return "";
+      const speaker = line.speaker.trim();
+      return speaker ? `${speaker}: ${text}` : text;
+    })
+    .filter(Boolean);
+  return [turn.narration, ...dialogue].filter((part) => part.trim()).join("\n\n");
 }
 
 function handled(content: string): MarkerResolution {
