@@ -64,6 +64,13 @@ type TurnCheckpoint = {
 /** 队列长度上限——只要 < 这个值就持续 prefetch，让缓冲始终饱满 */
 const MAX_QUEUE = 8;
 
+/**
+ * 互动节奏兜底：契约要求每批必须以 requiresChoice=true 收尾（每批必含一个选择节点）。
+ * 这里的兜底逻辑只在 LLM 失约时触发——上一批最后一段 requiresChoice 不是 true，
+ * 就在下一批 prompt 追加硬性指令把它强制带回正轨。
+ * 契约守约时不追加任何额外内容，以保持 prompt 干净。
+ */
+
 export function StoryView({ card, lorebook, initialState, characterId, customCard, resumeFrom, onReset, expandSeed, onCardUpdate }: Props) {
   const [state, setState] = useState<WorldState>(resumeFrom?.state ?? initialState);
   const [history, setHistory] = useState<ChatMessage[]>(resumeFrom?.history ?? []);
@@ -221,10 +228,29 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       };
     }
 
-    const promptUser =
+    let promptUser =
       userInput === "__story_open__"
         ? "（故事开始。请按 scenario 与世界书自然展开本轮事件，不要直接介绍角色。请按输出协议返回多段。）"
         : userInput;
+
+    // 互动节奏兜底：契约要求每批以 requiresChoice=true 收尾。若上一批失约（最后段不是 choice），
+    // 在本批 prompt 追加硬性指令；契约守约时不追加。
+    const allGeneratedSegments = [...turns, ...queue];
+    const lastSeg = allGeneratedSegments[allGeneratedSegments.length - 1];
+    const lastBatchFailedContract = allGeneratedSegments.length > 0 && !lastSeg?.requiresChoice;
+    if (lastBatchFailedContract) {
+      let segsSinceLastChoice = 0;
+      for (let i = allGeneratedSegments.length - 1; i >= 0; i -= 1) {
+        if (allGeneratedSegments[i].requiresChoice) break;
+        segsSinceLastChoice += 1;
+      }
+      promptUser += `\n\n【系统节奏兜底】上一批没有以 requiresChoice=true 收尾（已累计 ${segsSinceLastChoice} 段无选择）。本批必须严格以一个 requiresChoice=true 段落收尾并给出 2-4 个完整可执行的行动选项——这是契约硬性要求。`;
+      if (typeof console !== "undefined") {
+        console.warn(
+          `[fetchBatch] LLM 上批失约（${segsSinceLastChoice} 段无 choice）；本批已注入兜底指令`,
+        );
+      }
+    }
 
     const visibleHistory = tailHistory(baseHistory, baseSummary);
     const sceneCast = startingPointById[next.startingPoint]?.sceneCast;
