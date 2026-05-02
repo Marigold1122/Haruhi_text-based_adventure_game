@@ -75,6 +75,10 @@ export type ArchetypeInfo = {
   profile: Stats;
   /** 引用的原作 NPC 卡，让 LLM 能读到完整设定作为风味基底 */
   referenceCard: CharacterCardV2;
+  /** 立绘 URL（相对于 public/ 的路径）；图片不存在时 UI 会显示占位 */
+  portraitUrl: string;
+  /** 立绘占位用的主色（图片未生成时的兜底背景） */
+  portraitColor: string;
 };
 
 export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
@@ -95,6 +99,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 5, assertiveness: 10, efficiency: 6, introspection: 2,
     },
     referenceCard: npcReferenceCards.haruhi,
+    portraitUrl: "/portraits/haruhi.png",
+    portraitColor: "#d33b32",
   },
   kyon: {
     id: "kyon",
@@ -113,6 +119,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 7, assertiveness: 3, efficiency: 5, introspection: 9,
     },
     referenceCard: npcReferenceCards.kyon,
+    portraitUrl: "/portraits/kyon.png",
+    portraitColor: "#7c5e3c",
   },
   nagato: {
     id: "nagato",
@@ -131,6 +139,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 10, assertiveness: 4, efficiency: 9, introspection: 5,
     },
     referenceCard: npcReferenceCards.nagato,
+    portraitUrl: "/portraits/nagato.png",
+    portraitColor: "#8b7ab8",
   },
   asahina: {
     id: "asahina",
@@ -149,6 +159,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 4, assertiveness: 1, efficiency: 3, introspection: 7,
     },
     referenceCard: npcReferenceCards.asahina,
+    portraitUrl: "/portraits/asahina.png",
+    portraitColor: "#d97a5a",
   },
   koizumi: {
     id: "koizumi",
@@ -167,6 +179,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 9, assertiveness: 4, efficiency: 8, introspection: 5,
     },
     referenceCard: npcReferenceCards.koizumi,
+    portraitUrl: "/portraits/koizumi.png",
+    portraitColor: "#5a8a6f",
   },
   tsuruya: {
     id: "tsuruya",
@@ -185,6 +199,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 6, assertiveness: 7, efficiency: 5, introspection: 4,
     },
     referenceCard: npcReferenceCards.tsuruya,
+    portraitUrl: "/portraits/tsuruya.png",
+    portraitColor: "#3a7d5c",
   },
   asakura: {
     id: "asakura",
@@ -203,6 +219,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 9, assertiveness: 8, efficiency: 10, introspection: 3,
     },
     referenceCard: npcReferenceCards.asakura,
+    portraitUrl: "/portraits/asakura.png",
+    portraitColor: "#3d6fb6",
   },
   sasaki: {
     id: "sasaki",
@@ -221,6 +239,8 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
       rationality: 10, assertiveness: 4, efficiency: 7, introspection: 10,
     },
     referenceCard: npcReferenceCards.sasaki,
+    portraitUrl: "/portraits/sasaki.png",
+    portraitColor: "#6b4f3a",
   },
 };
 

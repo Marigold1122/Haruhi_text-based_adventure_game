@@ -36,8 +36,29 @@ export type StoryTurn = {
   scene: string;
   time: string;
   mood: string;
-  narration: string;          // 旁白
-  dialogue: DialogueLine[];   // 对白
+
+  /**
+   * 旁白文本（无 speaker 时）或单句台词（有 speaker 时）。
+   * 注意：这是这一段的"全部内容"，因此长度应控制在 30-100 字。
+   */
+  narration: string;
+
+  /**
+   * 对白说话人。
+   *   · 设了 speaker → 这段是【对白段】，narration 字段就是这句台词的内容（UI 会以 "speaker：「narration」" 高亮渲染）
+   *   · 未设 speaker → 这段是【旁白段】（标准段落显示）
+   */
+  speaker?: string;
+
+  /** 仅 dialogue 段使用：说话语气标签（"兴奋"、"紧张"、"标准微笑"等） */
+  // mood 已在上方独立字段——dialogue 段沿用同一字段表达语气
+
+  /**
+   * 旧的 dialogue 数组（已废弃，保留向前兼容旧存档）。
+   * 新输出请用独立的 speaker 段，不要再填这个数组。
+   */
+  dialogue: DialogueLine[];
+
   stateChanges: StateChanges;
 
   // 节奏字段（1.0 之后的核心改造）

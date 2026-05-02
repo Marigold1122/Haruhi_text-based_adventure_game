@@ -8,9 +8,11 @@ type Props = {
   characterName: string;
   trace?: PromptBuildTrace | null;
   summaryStatus?: SummaryState | null;
+  queueLength?: number;
+  prefetching?: boolean;
 };
 
-export function StatusPanel({ state, characterName, trace, summaryStatus }: Props) {
+export function StatusPanel({ state, characterName, trace, summaryStatus, queueLength, prefetching }: Props) {
   return (
     <aside className="status-panel">
       <section>
@@ -70,6 +72,16 @@ export function StatusPanel({ state, characterName, trace, summaryStatus }: Prop
         <section>
           <h4>滚动摘要</h4>
           <p className="muted">已折叠 {summaryStatus.collapsedUntilIndex} 条历史</p>
+        </section>
+      )}
+
+      {(queueLength !== undefined || prefetching) && (
+        <section>
+          <h4>叙事缓冲</h4>
+          <p className="muted">
+            队列剩余 {queueLength ?? 0} 段
+            {prefetching ? " · 后台预取中" : ""}
+          </p>
         </section>
       )}
 

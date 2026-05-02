@@ -5,7 +5,7 @@ import type { Lorebook } from "@/types/lorebook";
 import type { WorldState } from "@/types/worldState";
 import type { ChatMessage, StoryTurn } from "@/types/turn";
 
-import { runLLM } from "@/lib/llm";
+import { runLLMBatch } from "@/lib/llm";
 import { applyTurn } from "@/lib/worldState";
 import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
@@ -51,6 +51,9 @@ type TurnCheckpoint = {
   userInput: string;
 };
 
+/** 队列长度上限——只要 < 这个值就持续 prefetch，让缓冲始终饱满 */
+const MAX_QUEUE = 8;
+
 export function StoryView({ card, lorebook, initialState, characterId, customCard, resumeFrom, onReset }: Props) {
   const [state, setState] = useState<WorldState>(resumeFrom?.state ?? initialState);
   const [history, setHistory] = useState<ChatMessage[]>(resumeFrom?.history ?? []);
@@ -61,7 +64,14 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   const [turnCheckpoints, setTurnCheckpoints] = useState<TurnCheckpoint[]>(
     () => buildTurnCheckpoints(initialState, resumeFrom?.history ?? []),
   );
-  const [loading, setLoading] = useState(false);
+
+  /** 已从 LLM 拿到、还没被玩家"点开"的段落队列 */
+  const [queue, setQueue] = useState<StoryTurn[]>([]);
+  /** 是否需要给玩家显示思考态（队列空 + 没缓存时为 true） */
+  const [showThinking, setShowThinking] = useState(false);
+  /** 是否有后台 prefetch 在进行（不显示思考态，但需要避免重复触发） */
+  const prefetchingRef = useRef(false);
+
   const [pending, setPending] = useState<string | null>(null);
   const [trace, setTrace] = useState<PromptBuildTrace | null>(null);
   const [promptRuntime, setPromptRuntime] = useState<PromptRuntime>(() => loadPromptRuntime());
@@ -77,36 +87,89 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     if (initRef.current) return;
     initRef.current = true;
     if (!resumeFrom) {
-      void advance("__story_open__");
+      prefetchingRef.current = true;
+      void fetchBatch("__story_open__", { showThinking: true, consumeFirst: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * 玩家在思考态等待时，如果后台 prefetch 回来了——自动消费一段并关闭 thinking。
+   * 这覆盖一种场景：玩家追上了已经在跑的预取请求（不能等到下一次点击才看）。
+   */
+  useEffect(() => {
+    if (!showThinking) return;
+    if (queue.length === 0) return;
+    const [first, ...rest] = queue;
+    setQueue(rest);
+    setTurns((prev) => [...prev, first]);
+    setShowThinking(false);
+  }, [showThinking, queue.length]);
+
+  /**
+   * 持续后台预取：只要 queue 没满到上限、没在请求、当前段不需要选择、故事没结束——
+   * 立刻在后台启动新请求，让 LLM 一直在后台跑，缓冲始终饱满。
+   * 关键：预取时所有段都进 queue（consumeFirst=false），不会"自动弹出"段落。
+   */
+  useEffect(() => {
+    if (showThinking) return;             // 玩家正在等待 / LLM 正在初始请求
+    if (prefetchingRef.current) return;   // 已有后台请求
+    if (ending) return;                   // 故事结束
+    if (queue.length >= MAX_QUEUE) return; // 缓冲已满
+
+    const lastShown = turns[turns.length - 1];
+    if (lastShown?.requiresChoice) return; // 当前段要玩家选择，不能预取后续
+
+    if (turns.length === 0 && queue.length === 0) return; // 等首轮完成
+
+    prefetchingRef.current = true;
+    void fetchBatch("（继续推进当前故事。）", { showThinking: false, consumeFirst: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue.length, turns.length, showThinking, ending]);
+
   const lastTurn = useMemo(() => turns[turns.length - 1], [turns]);
 
-  async function advance(userInput: string) {
-    await advanceFrom({
-      userInput,
-      baseState: state,
-      baseHistory: history,
-      baseSummary: summary,
-    });
+  // ============================================================
+  // 核心：fetch / consume / prefetch 三层
+  // ============================================================
+
+  /**
+   * 调用 LLM 拿一批段落。
+   * - consumeFirst=true：第一段直接进 turns（玩家立刻看到）；其余进 queue。
+   *   场景：故事开场 / 玩家选择后 / 玩家点继续但 queue 空。
+   * - consumeFirst=false：所有段都进 queue。
+   *   场景：后台静默预取——绝对不能让段落自动弹出。
+   *
+   * stateChanges + 时间推进在【批次返回时一次性】应用——下一次预取拿到的状态是最新的。
+   */
+  async function fetchBatch(
+    userInput: string,
+    opts: { showThinking: boolean; consumeFirst: boolean },
+  ): Promise<void> {
+    const baseState = state;
+    const baseHistory = history;
+    const baseSummary = summary;
+
+    if (opts.showThinking) setShowThinking(true);
+
+    try {
+      await doFetchBatch(userInput, opts, baseState, baseHistory, baseSummary);
+    } finally {
+      // 无论成功失败都清掉 in-flight 标记，保证 effect 能再次触发
+      prefetchingRef.current = false;
+      if (opts.showThinking) setShowThinking(false);
+    }
   }
 
-  async function advanceFrom(opts: {
-    userInput: string;
-    baseState: WorldState;
-    baseHistory: ChatMessage[];
-    baseSummary: SummaryState;
-  }) {
-    const { userInput, baseState, baseHistory, baseSummary } = opts;
-    setLoading(true);
-
+  async function doFetchBatch(
+    userInput: string,
+    opts: { showThinking: boolean; consumeFirst: boolean },
+    baseState: WorldState,
+    baseHistory: ChatMessage[],
+    baseSummary: SummaryState,
+  ): Promise<void> {
     const decision = decideEvent(baseState);
-
-    // 时间推进现在完全由 LLM 上一轮的 timeAdvance 决定——这一轮调用前不再预先推进
     let next = baseState;
-
     if (!next.activeChain && decision.proposedChain) {
       next = {
         ...next,
@@ -120,12 +183,10 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
 
     const promptUser =
       userInput === "__story_open__"
-        ? "（故事开始。请按 scenario 与世界书自然展开本轮事件，不要直接介绍角色。）"
+        ? "（故事开始。请按 scenario 与世界书自然展开本轮事件，不要直接介绍角色。请按输出协议返回多段。）"
         : userInput;
 
-    // Rolling Summary：先把"已折叠"的尾部历史拿出来
     const visibleHistory = tailHistory(baseHistory, baseSummary);
-
     const sceneCast = startingPointById[next.startingPoint]?.sceneCast;
     const timelineContext = renderTimelineContext({
       currentIso: next.date.iso,
@@ -150,55 +211,117 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     });
     setTrace(withRuntimeWarnings(built.trace, promptRuntime));
 
-    const { raw, turn: parsedTurn } = await runLLM({ messages: built.messages, sampling: built.sampling });
-    const outputRegex = applyPresetOutputRegex(parsedTurn, promptRuntime);
-    const turn = outputRegex.turn;
-    if (outputRegex.applied.length || outputRegex.warnings.length) {
+    const { raw, turns: rawBatch } = await runLLMBatch({
+      messages: built.messages,
+      sampling: built.sampling,
+    });
+
+    // SillyTavern preset 的 regex_scripts：对每段 turn 跑一遍 AI 输出清洗
+    const regexHits = new Set<string>();
+    const regexWarnings: string[] = [];
+    const batch = rawBatch.map((t) => {
+      const r = applyPresetOutputRegex(t, promptRuntime);
+      r.applied.forEach((n) => regexHits.add(n));
+      regexWarnings.push(...r.warnings);
+      return r.turn;
+    });
+    if (regexHits.size || regexWarnings.length) {
       setTrace((prev) => prev ? ({
         ...prev,
-        regexHits: [...new Set([...(prev.regexHits ?? []), ...outputRegex.applied])],
-        warnings: [...(prev.warnings ?? []), ...outputRegex.warnings],
+        regexHits: [...new Set([...(prev.regexHits ?? []), ...regexHits])],
+        warnings: [...(prev.warnings ?? []), ...regexWarnings],
       }) : prev);
     }
+
+    // 调试可见：每批次实际段数 + 类型（旁白/对白）
+    if (typeof console !== "undefined") {
+      console.log(
+        `[fetchBatch] batch length = ${batch.length}; segments =`,
+        batch.map((t) => (t.speaker ? `dialogue(${t.speaker})` : "narration")),
+      );
+      if (batch.length < 5) {
+        console.warn(
+          `[fetchBatch] 只展开出 ${batch.length} 段——预期 12-18 段（日常）/ 6-10 段（关键场景）。可能是 LLM 没用 narrations 字符串数组，或字符串数组太短。原始响应：`,
+          raw.slice(0, 1000),
+        );
+      }
+    }
+
+    if (batch.length === 0) return;
 
     const userMsg: ChatMessage = { role: "user", content: promptUser };
     const aiMsg: ChatMessage = {
       role: "assistant",
-      content: promptRuntime.mode === "sillytavern-preset" ? renderTurnForPrompt(turn) : raw,
-      parsed: turn,
+      content: promptRuntime.mode === "sillytavern-preset" ? renderBatchForPrompt(batch) : raw,
+      parsed: batch[0],
     };
     const nextHistory = [...baseHistory, userMsg, aiMsg];
 
-    // 时间推进——按 LLM 给的 timeAdvance 字段
-    const advancedState: WorldState = {
-      ...next,
-      date: pushDate(next.date, turn.timeAdvance),
-      flow: turn.pace === "scene" ? "chain" : "weekly",
-    };
-    const finalState = applyTurn(advancedState, turn);
+    // 时间推进 + 状态变化：累加批次中【每一段】的 stateChanges + timeAdvance
+    let advanced = next;
+    for (const t of batch) {
+      advanced = applyTurn(
+        { ...advanced, date: pushDate(advanced.date, t.timeAdvance), flow: t.pace === "scene" ? "chain" : "weekly" },
+        t,
+      );
+    }
 
-    // 异步更新 Rolling Summary（不阻塞 UI）
+    // 异步 Rolling Summary
     maybeUpdateSummary({ history: nextHistory, prev: baseSummary }).then(setSummary);
 
     setHistory(nextHistory);
-    setTurns((prev) => [...prev, turn]);
+    setState(advanced);
     setTurnCheckpoints((prev) => [
       ...prev,
       { state: baseState, history: baseHistory, summary: baseSummary, userInput: promptUser },
     ]);
-    setState(finalState);
-    setLoading(false);
+
+    if (opts.consumeFirst) {
+      // 玩家点击触发的请求：第一段立刻显示
+      setTurns((prev) => [...prev, batch[0]]);
+      setQueue((prev) => [...prev, ...batch.slice(1)]);
+    } else {
+      // 后台预取：所有段都进队列，绝不主动消费
+      setQueue((prev) => [...prev, ...batch]);
+    }
+
     setPending(null);
 
     // 终结判定
-    const trigger = rollEnding(finalState);
+    const trigger = rollEnding(advanced);
     if (trigger) {
-      void runEnding(trigger, finalState, nextHistory);
+      void runEnding(trigger, advanced, nextHistory);
     }
   }
 
+  /**
+   * 消费下一段：把 queue[0] 弹到 turns。
+   * 自动 prefetch 由 useEffect 接管，不在这里触发。
+   */
+  function consumeNext(): void {
+    if (queue.length === 0) {
+      // 队列空：升级为思考态等待
+      if (!prefetchingRef.current) {
+        prefetchingRef.current = true;
+        void fetchBatch("（继续推进当前故事。）", { showThinking: true, consumeFirst: true });
+      } else {
+        // 已经在后台预取了，但玩家追上了——把后台预取升级为可见 thinking
+        setShowThinking(true);
+      }
+      return;
+    }
+
+    const next = queue[0];
+    setQueue((q) => q.slice(1));
+    setTurns((prev) => [...prev, next]);
+  }
+
+  // ============================================================
+  // 编辑功能（沿用之前的 turn-level 操作）
+  // ============================================================
+
   function deleteLatestTurn() {
-    if (loading || turns.length === 0) return;
+    if (showThinking || turns.length === 0) return;
     const checkpoint = turnCheckpoints[turnCheckpoints.length - 1];
     if (!checkpoint) return;
     setState(checkpoint.state);
@@ -206,12 +329,13 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setSummary(checkpoint.summary);
     setTurns((prev) => prev.slice(0, -1));
     setTurnCheckpoints((prev) => prev.slice(0, -1));
+    setQueue([]); // 删除一段后队列内容已不可信
     setPending(null);
     setTrace(null);
   }
 
   function regenerateLatestTurn() {
-    if (loading || turns.length === 0) return;
+    if (showThinking || turns.length === 0) return;
     const checkpoint = turnCheckpoints[turnCheckpoints.length - 1];
     if (!checkpoint) return;
     setState(checkpoint.state);
@@ -219,13 +343,10 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setSummary(checkpoint.summary);
     setTurns((prev) => prev.slice(0, -1));
     setTurnCheckpoints((prev) => prev.slice(0, -1));
+    setQueue([]);
     setPending(checkpoint.userInput);
-    void advanceFrom({
-      userInput: checkpoint.userInput,
-      baseState: checkpoint.state,
-      baseHistory: checkpoint.history,
-      baseSummary: checkpoint.summary,
-    });
+    prefetchingRef.current = true;
+    void fetchBatch(checkpoint.userInput, { showThinking: true, consumeFirst: true });
   }
 
   function updateLatestTurn(updated: StoryTurn) {
@@ -257,19 +378,23 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     }
   }
 
+  // ============================================================
+  // 玩家交互
+  // ============================================================
+
   function onChoose(text: string) {
-    if (loading) return;
+    if (showThinking) return;
     setPending(text);
-    void advance(text);
+    // 玩家选择 / 自定义行动 → 清空队列，重新请求
+    setQueue([]);
+    prefetchingRef.current = true;
+    void fetchBatch(text, { showThinking: true, consumeFirst: true });
   }
 
   function onContinue() {
-    if (loading) return;
+    if (showThinking) return;
     setPending(null);
-    const input = promptRuntime.mode === "sillytavern-preset"
-      ? "（继续推进当前故事。）"
-      : "（继续推进。请按当前节奏自然延续故事——日常段落用 summary 跳过 1-2 天，关键节点用 scene。）";
-    void advance(input);
+    consumeNext();
   }
 
   function doSave() {
@@ -290,6 +415,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setSummary(blob.summary ?? emptySummary);
     setTurns(blob.history.flatMap((m) => (m.parsed ? [m.parsed] : [])));
     setTurnCheckpoints(buildTurnCheckpoints(initialState, blob.history));
+    setQueue([]);
     alert("已载入存档。");
   }
 
@@ -320,21 +446,29 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
           <MessageStream
             turns={turns}
             pendingUserAction={pending}
-            loading={loading}
+            loading={showThinking}
+            onAdvance={onContinue}
             onDeleteLatest={deleteLatestTurn}
             onRegenerateLatest={regenerateLatestTurn}
             onUpdateLatest={updateLatestTurn}
           />
         </main>
 
-        <StatusPanel state={state} characterName={card.data.name} trace={trace} summaryStatus={summary} />
+        <StatusPanel
+          state={state}
+          characterName={card.data.name}
+          trace={trace}
+          summaryStatus={summary}
+          queueLength={queue.length}
+          prefetching={prefetchingRef.current}
+        />
       </div>
 
       <footer className="story-footer">
         <ChoicePanel
           choices={lastTurn?.choices ?? []}
           requiresChoice={lastTurn?.requiresChoice ?? false}
-          disabled={loading}
+          disabled={showThinking}
           onChoose={onChoose}
           onContinue={onContinue}
         />
@@ -424,6 +558,10 @@ function renderTurnForPrompt(turn: StoryTurn): string {
     })
     .filter(Boolean);
   return [turn.narration, ...dialogue].filter((part) => part.trim()).join("\n\n");
+}
+
+function renderBatchForPrompt(batch: StoryTurn[]): string {
+  return batch.map(renderTurnForPrompt).filter((part) => part.trim()).join("\n\n");
 }
 
 function replaceLastParsedAssistant(history: ChatMessage[], turn: StoryTurn, content: string): ChatMessage[] {

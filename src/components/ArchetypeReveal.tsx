@@ -3,6 +3,7 @@ import {
   archetypeInfo,
   statKeys,
   statLabels,
+  type ArchetypeInfo,
 } from "@/data/characterArchetypes";
 import type { MatchResult } from "@/lib/personalityMatcher";
 
@@ -12,12 +13,11 @@ type Props = {
 };
 
 /**
- * 测试结束后的"匹配人格 + 补充输入"组合界面。
- * 1. 显示匹配的原型 + 描述
- * 2. 显示玩家的 8 维参数画像（柱状图）
- * 3. 显示与各原型的相似度排行
- * 4. 延迟淡入：补充输入框 + "开始扮演" 按钮
- * 5. 点击"开始扮演"后整屏淡出
+ * 测试结束后的"匹配人格 + 立绘 + 补充输入"组合界面。
+ *  1. 主区显示立绘 + 原型名 + MBTI + 描述
+ *  2. 8 维参数画像柱状图 + 与各原型的相似度排行
+ *  3. 700ms 后淡入：补充输入框 + 「开始扮演」按钮
+ *  4. 点击"开始扮演" → 整屏淡出 → onConfirm
  */
 export function ArchetypeReveal({ match, onConfirm }: Props) {
   const arch = archetypeInfo[match.archetype];
@@ -42,9 +42,15 @@ export function ArchetypeReveal({ match, onConfirm }: Props) {
     <div className={`reveal-screen ${fadingOut ? "fade-out" : "fade-in"}`}>
       <main className="reveal-card">
         <div className="reveal-tag">人格匹配完成</div>
-        <h1 className="reveal-name">{arch.name}</h1>
-        <p className="reveal-mbti">{arch.mbti}</p>
-        <p className="reveal-short">{arch.shortDesc}</p>
+
+        <div className="reveal-hero">
+          <ArchetypePortrait arch={arch} size="large" />
+          <div className="reveal-hero-text">
+            <h1 className="reveal-name">{arch.name}</h1>
+            <p className="reveal-mbti">{arch.mbti}</p>
+            <p className="reveal-short">{arch.shortDesc}</p>
+          </div>
+        </div>
 
         <article className="reveal-long">
           {arch.longDesc.split("\n").map((para, i) => (
@@ -73,15 +79,19 @@ export function ArchetypeReveal({ match, onConfirm }: Props) {
         <section className="reveal-ranking">
           <h4>相似度排行（前 3）</h4>
           <ul>
-            {top3.map((r) => (
-              <li key={r.archetype} className={r.archetype === match.archetype ? "main" : ""}>
-                <span className="rank-name">{archetypeInfo[r.archetype].name}</span>
-                <span className="rank-bar-wrap">
-                  <span className="rank-bar-fill" style={{ width: `${r.similarity}%` }} />
-                </span>
-                <span className="rank-value">{r.similarity}%</span>
-              </li>
-            ))}
+            {top3.map((r) => {
+              const a = archetypeInfo[r.archetype];
+              return (
+                <li key={r.archetype} className={r.archetype === match.archetype ? "main" : ""}>
+                  <ArchetypePortrait arch={a} size="mini" />
+                  <span className="rank-name">{a.name}</span>
+                  <span className="rank-bar-wrap">
+                    <span className="rank-bar-fill" style={{ width: `${r.similarity}%` }} />
+                  </span>
+                  <span className="rank-value">{r.similarity}%</span>
+                </li>
+              );
+            })}
           </ul>
         </section>
 
@@ -121,5 +131,39 @@ export function ArchetypeReveal({ match, onConfirm }: Props) {
         )}
       </main>
     </div>
+  );
+}
+
+/**
+ * 立绘组件——图片不存在时显示占位（角色首字 + 主色背景）
+ */
+function ArchetypePortrait({
+  arch,
+  size,
+}: {
+  arch: ArchetypeInfo;
+  size: "large" | "mini";
+}) {
+  const [failed, setFailed] = useState(false);
+  const className = `archetype-portrait ${size}`;
+
+  if (failed) {
+    return (
+      <div
+        className={`${className} placeholder`}
+        style={{ background: `linear-gradient(135deg, ${arch.portraitColor}, ${arch.portraitColor}dd)` }}
+      >
+        <span className="placeholder-letter">{arch.name.charAt(0)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      className={className}
+      src={arch.portraitUrl}
+      alt={arch.name}
+      onError={() => setFailed(true)}
+    />
   );
 }

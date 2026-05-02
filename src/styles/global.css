@@ -1284,3 +1284,222 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 .reveal-ranking li.main .rank-value { color: var(--accent); }
+
+/* ============================================================
+   Archetype Portrait（立绘）
+   ============================================================ */
+
+/* 大立绘 —— 用于主匹配的"hero"区 */
+.archetype-portrait.large {
+  width: 180px;
+  height: 240px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--bg-2);
+  flex-shrink: 0;
+  box-shadow: var(--shadow);
+  display: block;
+}
+
+/* 小立绘 —— 用于排名条目 */
+.archetype-portrait.mini {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-2);
+  flex-shrink: 0;
+}
+
+/* 占位（图片不存在时） */
+.archetype-portrait.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.archetype-portrait.large.placeholder { font-size: 48px; }
+.archetype-portrait.mini.placeholder { font-size: 14px; }
+.placeholder-letter {
+  text-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+
+/* hero 区——立绘 + 文字水平排列 */
+.reveal-hero {
+  display: flex;
+  gap: 22px;
+  margin-bottom: 22px;
+  align-items: stretch;
+}
+.reveal-hero-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* 调整 reveal-name 等在 hero 容器下的间距 */
+.reveal-hero-text .reveal-name {
+  margin-top: 0;
+}
+
+/* 排名条目用 flex，立绘在前 */
+.reveal-ranking li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reveal-ranking .rank-name {
+  width: 100px;
+  flex-shrink: 0;
+}
+
+/* 加载屏的思考计时器位置 */
+.loading-timer {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* 测试题的"上一题"按钮与已选高亮 */
+.quiz-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.quiz-back-btn {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  width: 76px;
+}
+.quiz-back-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.quiz-option.previously-selected {
+  border-color: var(--accent);
+  background: rgba(211, 59, 50, 0.08);
+}
+.quiz-option-prev-tag {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(211, 59, 50, 0.12);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+@media (max-width: 720px) {
+  .reveal-hero {
+    flex-direction: column;
+    align-items: center;
+  }
+  .archetype-portrait.large {
+    width: 160px;
+    height: 220px;
+  }
+  .reveal-hero-text {
+    text-align: center;
+  }
+}
+
+/* ============================================================
+   多段化 / 短段 / 对白独立段
+   ============================================================ */
+
+/* 对白段——紧凑、左侧色带，与旁白段视觉区分明显 */
+.turn-card.dialogue-turn {
+  padding: 14px 20px;
+  background: rgba(61, 111, 182, 0.04);
+  border-left: 3px solid var(--school-blue);
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+
+/* 旁白段也压缩间距 */
+.turn-card.narration-turn {
+  padding: 14px 20px 12px;
+  margin-bottom: 8px;
+}
+
+/* 不再每段都有大 header，header 仅出现在事件标题变化时 */
+.turn-card .turn-head {
+  margin-bottom: 8px;
+}
+
+/* 对白段独立样式（与原 dialogue-line 区分） */
+.dialogue-line.standalone {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+}
+.dialogue-line.standalone .speaker {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--school-blue);
+}
+.dialogue-line.standalone .speaker-mood {
+  display: inline-block;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--bg-2);
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.dialogue-line.standalone .speech {
+  margin: 2px 0 0;
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* 旁白段 narration 字号略小 */
+.turn-card.narration-turn .narration {
+  font-size: 14.5px;
+  line-height: 1.75;
+  margin: 0;
+}
+
+/* turn-actions 紧凑 */
+.turn-card.dialogue-turn .turn-actions,
+.turn-card.narration-turn .turn-actions {
+  margin-bottom: 6px;
+}
+
+/* time-advance 在短段中更不显眼 */
+.turn-card .time-advance {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+/* 消息流整体可点击（用户点击页面任何空白处都能继续） */
+.message-stream.advance-clickable {
+  cursor: pointer;
+}
+/* 内部按钮 / 编辑器在 stream-clickable 下保持自己的 cursor */
+.message-stream.advance-clickable button,
+.message-stream.advance-clickable textarea,
+.message-stream.advance-clickable input,
+.message-stream.advance-clickable .turn-editor {
+  cursor: auto;
+}
+.message-stream.advance-clickable button {
+  cursor: pointer;
+}

@@ -4,7 +4,7 @@
 // MVP 阶段用 mockLLM 返回拼好的 <event_json> 文本，保证完整闭环。
 // 后续替换为真实 chat completion 调用即可（OpenAI / Claude / 本地 LLM 同 ChatML 模式）。
 
-import type { ChatMessage, StoryTurn } from "@/types/turn";
+import type { ChatMessage, StoryTurn, TimeAdvance } from "@/types/turn";
 import type { SamplingParams } from "@/types/preset";
 import type { WorldState } from "@/types/worldState";
 
@@ -82,27 +82,17 @@ function cleanDialogue(value: unknown): StoryTurn["dialogue"] {
     .filter((line) => line.speaker || line.text);
 }
 
-export function parseEventJson(text: string): StoryTurn | null {
-  let obj: unknown | null = null;
-
-  // ① 标签形式
-  const tagged = text.match(EVENT_JSON_RE);
-  if (tagged) obj = tryParse(tagged[1].trim());
-
-  // ② markdown 代码块
-  if (!obj) {
-    const fenced = text.match(FENCED_JSON_RE);
-    if (fenced) obj = tryParse(fenced[1].trim());
-  }
-
-  // ③ 文本里第一个完整对象
-  if (!obj) obj = extractBareJsonObject(text);
-
+/** 把已经被解析为 JSON object 的对象转换成 StoryTurn——批量解析与单段解析共用 */
+function objectToTurn(obj: unknown): StoryTurn | null {
   if (!obj || typeof obj !== "object") return null;
   const o = obj as Record<string, unknown>;
   if (typeof o.eventTitle !== "string") return null;
   if (typeof o.narration !== "string") return null;
   if (!Array.isArray(o.choices)) return null;
+  return finalizeTurn(o);
+}
+
+function finalizeTurn(o: Record<string, unknown>): StoryTurn {
 
   // pace / timeAdvance / requiresChoice 的兜底默认值——若 LLM 没填，按"日常 summary"处理
   const pace: StoryTurn["pace"] = o.pace === "scene" ? "scene" : "summary";
@@ -129,12 +119,18 @@ export function parseEventJson(text: string): StoryTurn | null {
     ? rawChoices.filter((c) => typeof c === "string").map(stripGeneratedTextPrefix).slice(0, 4)
     : [];
 
+  const speaker =
+    typeof o.speaker === "string" && o.speaker.trim()
+      ? stripGeneratedTextPrefix(o.speaker.trim())
+      : undefined;
+
   return {
-    eventTitle: stripGeneratedTextPrefix(o.eventTitle),
+    eventTitle: stripGeneratedTextPrefix(o.eventTitle as string),
     scene: typeof o.scene === "string" ? stripGeneratedTextPrefix(o.scene) : "",
     time: typeof o.time === "string" ? stripGeneratedTextPrefix(o.time) : "",
     mood: typeof o.mood === "string" ? stripGeneratedTextPrefix(o.mood) : "",
-    narration: stripGeneratedTextPrefix(o.narration),
+    narration: stripGeneratedTextPrefix(o.narration as string),
+    speaker,
     dialogue: cleanDialogue(o.dialogue),
     stateChanges: (o.stateChanges as StoryTurn["stateChanges"]) ?? {},
     pace,
@@ -143,6 +139,179 @@ export function parseEventJson(text: string): StoryTurn | null {
     choices,
     chain: o.chain as StoryTurn["chain"],
   };
+}
+
+/** 单段解析（向前兼容旧 API）—— LLM 返回单个对象时用 */
+export function parseEventJson(text: string): StoryTurn | null {
+  let obj: unknown | null = null;
+
+  const tagged = text.match(EVENT_JSON_RE);
+  if (tagged) obj = tryParse(tagged[1].trim());
+
+  if (!obj) {
+    const fenced = text.match(FENCED_JSON_RE);
+    if (fenced) obj = tryParse(fenced[1].trim());
+  }
+
+  if (!obj) obj = extractBareJsonObject(text);
+
+  return objectToTurn(obj);
+}
+
+/**
+ * 对白识别正则——匹配多种格式：
+ *   "凉宫春日：「……早。」"
+ *   "凉宫春日 · 敷衍：「……早。」"
+ *   "凉宫春日（敷衍）：「……早。」"
+ *   "Sasaki: 「……」" / "Sasaki · calm: '……'"
+ * 捕获 [全句, 说话人, 语气?, 台词内容]
+ */
+const DIALOGUE_RE =
+  /^([^\s「『"":：（(·・•]+(?:\s+[^\s「『"":：（(·・•]+)*)\s*(?:[·・•]\s*([^：:「『"\n]+?)\s*|（\s*([^）\n]+?)\s*）\s*|\(\s*([^)\n]+?)\s*\)\s*)?[：:]\s*[「『"'](.+)[」』"']\s*$/;
+
+/**
+ * 把"narrations 字符串数组 + 顶层属性"展开为多段 turn。
+ * - 每段识别是否对白格式 → 设 speaker / mood / narration
+ * - eventTitle / scene / time / mood / chain 仅放在第一段
+ * - timeAdvance / stateChanges / requiresChoice / choices 放在【最后一段】
+ *   （让累积应用 stateChanges、时间推进只算一次；UI 显示 ↪ 时间也只在最后段出现）
+ */
+function expandNarrations(wrapper: Record<string, unknown>): StoryTurn[] {
+  const raw = wrapper.narrations;
+  if (!Array.isArray(raw)) return [];
+  const narrations = raw.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+  if (narrations.length === 0) return [];
+
+  const eventTitle = typeof wrapper.eventTitle === "string" ? stripGeneratedTextPrefix(wrapper.eventTitle) : "";
+  const scene = typeof wrapper.scene === "string" ? stripGeneratedTextPrefix(wrapper.scene) : "";
+  const time = typeof wrapper.time === "string" ? stripGeneratedTextPrefix(wrapper.time) : "";
+  const mood = typeof wrapper.mood === "string" ? stripGeneratedTextPrefix(wrapper.mood) : "";
+  const pace: StoryTurn["pace"] = wrapper.pace === "scene" ? "scene" : "summary";
+  const chain = wrapper.chain as StoryTurn["chain"];
+
+  const ta = (wrapper.timeAdvance ?? {}) as Partial<TimeAdvance>;
+  const timeAdvance: TimeAdvance = {
+    days: typeof ta.days === "number" ? ta.days : undefined,
+    hours: typeof ta.hours === "number" ? ta.hours : undefined,
+    minutes: typeof ta.minutes === "number" ? ta.minutes : undefined,
+    note: typeof ta.note === "string" ? ta.note : undefined,
+  };
+  if (
+    timeAdvance.days === undefined &&
+    timeAdvance.hours === undefined &&
+    timeAdvance.minutes === undefined
+  ) {
+    if (pace === "summary") timeAdvance.days = 1;
+    else timeAdvance.minutes = Math.max(narrations.length, 5);
+  }
+
+  const stateChanges = (wrapper.stateChanges as StoryTurn["stateChanges"]) ?? {};
+  const requiresChoice = typeof wrapper.requiresChoice === "boolean" ? wrapper.requiresChoice : false;
+  const rawChoices = (wrapper.choices as string[]) ?? [];
+  const choices = requiresChoice
+    ? rawChoices.filter((c) => typeof c === "string").map(stripGeneratedTextPrefix).slice(0, 4)
+    : [];
+
+  return narrations.map((line, i) => {
+    const isFirst = i === 0;
+    const isLast = i === narrations.length - 1;
+
+    // 尝试匹配对白格式
+    const trimmed = line.trim();
+    const m = trimmed.match(DIALOGUE_RE);
+    let speaker: string | undefined;
+    let lineMood: string | undefined;
+    let content = trimmed;
+    if (m) {
+      speaker = m[1].trim();
+      lineMood = (m[2] || m[3] || m[4])?.trim() || undefined;
+      content = m[5].trim();
+    }
+
+    return {
+      eventTitle: isFirst ? eventTitle : "",
+      scene: isFirst ? scene : "",
+      time: isFirst ? time : "",
+      mood: speaker ? lineMood ?? "" : (isFirst ? mood : ""),
+      narration: stripGeneratedTextPrefix(content),
+      speaker,
+      dialogue: [],
+      stateChanges: isLast ? stateChanges : {},
+      pace,
+      timeAdvance: isLast ? timeAdvance : { minutes: 0 },
+      requiresChoice: isLast ? requiresChoice : false,
+      choices: isLast ? choices : [],
+      chain,
+    };
+  });
+}
+
+/**
+ * 批量解析：返回 StoryTurn 数组。
+ * 解析优先级：
+ *   ① 对象 + narrations 字符串数组（新协议——LLM 友好）—— 自动展开为多段
+ *   ② 对象 + turns 对象数组
+ *   ③ 顶层数组 [turn1, turn2, ...]
+ *   ④ 单个 turn 对象（旧格式，包装为长度 1 数组）
+ * 解析失败返回空数组。
+ * 如果某段 requiresChoice=true，截断到该段（之后段被丢弃）。
+ */
+export function parseEventJsonBatch(text: string): StoryTurn[] {
+  let obj: unknown | null = null;
+
+  const tagged = text.match(EVENT_JSON_RE);
+  if (tagged) obj = tryParse(tagged[1].trim());
+
+  if (!obj) {
+    const fenced = text.match(FENCED_JSON_RE);
+    if (fenced) obj = tryParse(fenced[1].trim());
+  }
+
+  if (!obj) {
+    const arrayMatch = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    if (arrayMatch) obj = tryParse(arrayMatch[0]);
+  }
+
+  if (!obj) obj = extractBareJsonObject(text);
+  if (!obj) return [];
+
+  // ① 顶层对象 + narrations 数组（新协议优先）
+  if (!Array.isArray(obj) && typeof obj === "object") {
+    const wrapper = obj as Record<string, unknown>;
+    if (Array.isArray(wrapper.narrations) && wrapper.narrations.length > 0) {
+      return truncateAtFirstChoice(expandNarrations(wrapper));
+    }
+    // ② turns 对象数组
+    if (Array.isArray(wrapper.turns) && wrapper.turns.length > 0) {
+      const expanded: StoryTurn[] = [];
+      for (const item of wrapper.turns) {
+        const t = objectToTurn(item);
+        if (t) expanded.push(t);
+      }
+      return truncateAtFirstChoice(expanded);
+    }
+  }
+
+  // ③ 顶层数组
+  if (Array.isArray(obj)) {
+    const expanded: StoryTurn[] = [];
+    for (const item of obj) {
+      const t = objectToTurn(item);
+      if (t) expanded.push(t);
+    }
+    return truncateAtFirstChoice(expanded);
+  }
+
+  // ④ 单 turn 对象（最后兜底）
+  const single = objectToTurn(obj);
+  return single ? [single] : [];
+}
+
+function truncateAtFirstChoice(turns: StoryTurn[]): StoryTurn[] {
+  for (let i = 0; i < turns.length; i++) {
+    if (turns[i].requiresChoice) return turns.slice(0, i + 1);
+  }
+  return turns;
 }
 
 // ------------------------------------------------------------------
@@ -513,7 +682,7 @@ export function refreshLLM(settings: LLMSettings): void {
   activeLLM = buildLLM(settings);
 }
 
-// 给 UI 用的高层封装：完整一次调用并保底解析
+// 给 UI 用的高层封装：完整一次调用并保底解析（单段，向前兼容）
 export async function runLLM(opts: {
   messages: ChatMessage[];
   sampling: SamplingParams;
@@ -523,7 +692,6 @@ export async function runLLM(opts: {
     const raw = await activeLLM(opts.messages, opts.sampling);
     const parsed = parseEventJson(raw);
     if (!parsed) {
-      // 开发者控制台保留完整输出，便于排查
       console.warn("[runLLM] 解析失败，原始输出：", raw);
     }
     const turn = parsed ?? fallbackTurn("AI 输出未通过 JSON 校验", raw);
@@ -531,6 +699,26 @@ export async function runLLM(opts: {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { raw: "", turn: fallbackTurn(`LLM 调用失败：${msg}`) };
+  }
+}
+
+/** 批量返回：LLM 一次性返回多段，UI 可以缓存并让玩家逐段消费 */
+export async function runLLMBatch(opts: {
+  messages: ChatMessage[];
+  sampling: SamplingParams;
+  state?: WorldState;
+}): Promise<{ raw: string; turns: StoryTurn[] }> {
+  try {
+    const raw = await activeLLM(opts.messages, opts.sampling);
+    const turns = parseEventJsonBatch(raw);
+    if (turns.length === 0) {
+      console.warn("[runLLMBatch] 解析失败，原始输出：", raw);
+      return { raw, turns: [fallbackTurn("AI 输出未通过 JSON 校验", raw)] };
+    }
+    return { raw, turns };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { raw: "", turns: [fallbackTurn(`LLM 调用失败：${msg}`)] };
   }
 }
 

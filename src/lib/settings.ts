@@ -20,9 +20,9 @@ const defaults: LLMSettings = {
   apiKey: "",
   model: "gpt-4o-mini",
   temperature: 0.9,
-  // 一个完整的 turn（narration 200 字 + dialogue 3-5 条 + stateChanges + choices）通常 1200-1700 中文 token，
-  // 默认拉到 2000 留出余量；reasoning 模型（deepseek-reasoner / o-series）建议手动调到 4000+。
-  maxTokens: 2000,
+  // 一次返回 12-18 段短叙述（每段 30-100 字 + JSON 包装开销），需要更大空间。
+  // 默认 4000 token；reasoning 模型（deepseek-reasoner / o-series）建议手动调到 6000+。
+  maxTokens: 4000,
 };
 
 export function loadSettings(): LLMSettings {
