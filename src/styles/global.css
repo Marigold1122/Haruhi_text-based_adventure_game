@@ -867,3 +867,420 @@ textarea {
 .ending-text { line-height: 1.85; font-size: 15px; }
 .ending-text p { margin: 0 0 12px; }
 .ending-card footer { margin-top: 20px; display: flex; justify-content: flex-end; }
+
+/* ============================================================
+   MBTI 测试 / 人格匹配 / 加载屏 (1.x 新增)
+   ============================================================ */
+
+@keyframes fadeInQuiz {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOutQuiz {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+.fade-in { animation: fadeInQuiz 380ms ease both; }
+.fade-out { animation: fadeOutQuiz 280ms ease both; }
+
+/* ---- intro 屏（开始测试） ---- */
+.intro-block {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--panel);
+  padding: 24px 28px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+.intro-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* ---- MBTI 测试屏 ---- */
+.quiz-screen {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 56px 28px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+.quiz-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.quiz-progress {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+.quiz-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.quiz-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 320ms ease;
+}
+.quiz-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px 30px 24px;
+  box-shadow: var(--shadow);
+}
+.quiz-scene-tag {
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--accent);
+  background: rgba(211, 59, 50, 0.08);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+.quiz-prompt {
+  font-size: 17px;
+  line-height: 1.7;
+  margin: 0 0 22px;
+  font-weight: 600;
+}
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.quiz-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  text-align: left;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 140ms ease;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.quiz-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(211, 59, 50, 0.04);
+  transform: translateX(2px);
+}
+.quiz-option-letter {
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  width: 18px;
+}
+.quiz-option-text {
+  flex: 1;
+}
+.quiz-footer {
+  text-align: center;
+}
+
+/* ---- 人格匹配 + 补充输入屏 ---- */
+.reveal-screen {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 28px 80px;
+  min-height: 100vh;
+  box-sizing: border-box;
+  transition: opacity 480ms ease;
+}
+.reveal-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 36px 36px 32px;
+  box-shadow: var(--shadow);
+}
+.reveal-tag {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+.reveal-name {
+  margin: 0 0 4px;
+  font-size: 32px;
+  letter-spacing: 1px;
+}
+.reveal-mbti {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--school-blue);
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.reveal-short {
+  margin: 0 0 20px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.reveal-long {
+  background: var(--bg-2);
+  padding: 16px 18px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+.reveal-long p {
+  margin: 0 0 8px;
+  line-height: 1.75;
+  font-size: 14.5px;
+}
+.reveal-long p:last-child { margin-bottom: 0; }
+.reveal-scores {
+  margin-bottom: 24px;
+}
+.reveal-scores h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+.reveal-scores ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.reveal-scores li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-size: 13.5px;
+}
+.reveal-scores li.main {
+  background: rgba(211, 59, 50, 0.1);
+  color: var(--accent);
+  font-weight: 600;
+}
+.score-name { }
+.score-value { color: var(--muted); }
+.reveal-scores li.main .score-value { color: var(--accent); }
+
+.supplement-section {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+  margin-top: 12px;
+}
+.supplement-section h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.supplement-section .form-row {
+  margin-top: 12px;
+}
+.supplement-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.primary-btn.big {
+  font-size: 15px;
+  padding: 12px 28px;
+  border-radius: 10px;
+}
+
+/* ---- 加载屏 ---- */
+.loading-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.loading-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 40px 36px 36px;
+  max-width: 540px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.loading-tag {
+  display: inline-block;
+  background: var(--school-blue);
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+.loading-card h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+}
+.loading-card p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 0 0 20px;
+}
+.loading-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.loading-dots span {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: loadingPulse 1.2s ease-in-out infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes loadingPulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.loading-card.error {
+  text-align: left;
+}
+.loading-card.error h2 {
+  color: var(--accent);
+}
+.error-msg {
+  background: rgba(211, 59, 50, 0.06);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.loading-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ---- 8 维参数画像（柱状图）---- */
+.reveal-stats {
+  margin-bottom: 24px;
+}
+.reveal-stats h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+.stats-bars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.stat-label {
+  width: 32px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+.stat-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stat-bar-fill {
+  height: 100%;
+  background: var(--school-blue);
+  transition: width 600ms ease;
+}
+.stat-value {
+  width: 28px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 相似度排行 ---- */
+.reveal-ranking {
+  margin-bottom: 24px;
+}
+.reveal-ranking h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+.reveal-ranking ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.reveal-ranking li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-size: 13px;
+}
+.reveal-ranking li.main {
+  background: rgba(211, 59, 50, 0.1);
+  color: var(--accent);
+  font-weight: 600;
+}
+.rank-name {
+  width: 110px;
+  flex-shrink: 0;
+}
+.rank-bar-wrap {
+  flex: 1;
+  height: 5px;
+  background: var(--line);
+  border-radius: 2.5px;
+  overflow: hidden;
+}
+.rank-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 600ms ease;
+}
+.rank-value {
+  width: 40px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.reveal-ranking li.main .rank-value { color: var(--accent); }
