@@ -9,19 +9,26 @@ import { startingPointById } from "@/data/startingPoints";
 import type { WorldState } from "@/types/worldState";
 import type { CharacterCardV2 } from "@/types/character";
 import type { IdentityLevel } from "@/types/lorebook";
+import type { RandomCharacterSeed } from "@/lib/randomMode";
 import { load } from "@/lib/storage";
 
 type SessionConfig = {
   card: CharacterCardV2;
   identity: IdentityLevel;
   initialState: WorldState;
+  /** 仅在新开局且需要后台扩展 description 时存在；resume 时为空 */
+  expandSeed?: RandomCharacterSeed;
 };
 
 export default function App() {
   const [session, setSession] = useState<SessionConfig | null>(null);
   const [resumeFlag, setResumeFlag] = useState(false);
 
-  function startSession(opts: { card: CharacterCardV2; identity: IdentityLevel }) {
+  function startSession(opts: {
+    card: CharacterCardV2;
+    identity: IdentityLevel;
+    expandSeed?: RandomCharacterSeed;
+  }) {
     // 起点固定为入学日；玩家身份覆盖默认
     const point = startingPointById["north_high_entrance"]!;
     const initialState: WorldState = {
@@ -30,7 +37,16 @@ export default function App() {
       identity: opts.identity,
     };
     setResumeFlag(false);
-    setSession({ card: opts.card, identity: opts.identity, initialState });
+    setSession({
+      card: opts.card,
+      identity: opts.identity,
+      initialState,
+      expandSeed: opts.expandSeed,
+    });
+  }
+
+  function updateCard(card: CharacterCardV2) {
+    setSession((prev) => (prev ? { ...prev, card } : prev));
   }
 
   function reset() {
@@ -74,6 +90,8 @@ export default function App() {
       customCard={session.card}
       resumeFrom={resumeFlag ? load() : null}
       onReset={reset}
+      expandSeed={session.expandSeed}
+      onCardUpdate={updateCard}
     />
   );
 }
