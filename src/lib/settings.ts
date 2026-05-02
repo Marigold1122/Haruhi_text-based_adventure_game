@@ -50,10 +50,22 @@ export function saveSettings(s: LLMSettings): void {
 }
 
 // 常用 baseURL 预设，方便用户切换
-export const baseUrlPresets: Array<{ label: string; url: string; provider: ProviderId; modelHint: string }> = [
+export const baseUrlPresets: Array<{
+  label: string;
+  url: string;
+  provider: ProviderId;
+  modelHint: string;
+  model?: string;
+}> = [
   { label: "OpenAI", url: "https://api.openai.com/v1", provider: "openai", modelHint: "gpt-4o / gpt-4o-mini" },
   { label: "OpenRouter", url: "https://openrouter.ai/api/v1", provider: "openai", modelHint: "anthropic/claude-3.5-sonnet 等" },
-  { label: "DeepSeek", url: "https://api.deepseek.com/v1", provider: "openai", modelHint: "deepseek-chat / deepseek-reasoner" },
+  {
+    label: "DeepSeek",
+    url: "https://api.deepseek.com",
+    provider: "openai",
+    modelHint: "deepseek-v4-flash / deepseek-v4-pro",
+    model: "deepseek-v4-flash",
+  },
   { label: "Anthropic", url: "https://api.anthropic.com/v1", provider: "anthropic", modelHint: "claude-3-5-sonnet-latest" },
   { label: "本地 LM Studio / vLLM / Ollama", url: "http://localhost:1234/v1", provider: "openai", modelHint: "随本地配置" },
 ];

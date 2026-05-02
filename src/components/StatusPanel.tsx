@@ -1,11 +1,12 @@
 import type { WorldState } from "@/types/worldState";
 import type { SummaryState } from "@/lib/summary";
+import type { PromptBuildTrace } from "@/lib/prompting/types";
 import { identityGuides } from "@/data/identityGuide";
 
 type Props = {
   state: WorldState;
   characterName: string;
-  trace?: { presetName: string; activeLoreEntries: string[] } | null;
+  trace?: PromptBuildTrace | null;
   summaryStatus?: SummaryState | null;
 };
 
@@ -75,13 +76,39 @@ export function StatusPanel({ state, characterName, trace, summaryStatus }: Prop
       {trace && (
         <section className="trace">
           <h4>调度信息（开发）</h4>
+          <p className="muted">Mode: {trace.mode}</p>
           <p className="muted">Preset: {trace.presetName}</p>
+          {trace.promptOrderCharacterId !== undefined && (
+            <p className="muted">ST order: {trace.promptOrderCharacterId}</p>
+          )}
+          {trace.enabledPromptCount !== undefined && (
+            <p className="muted">Enabled prompts: {trace.enabledPromptCount}</p>
+          )}
+          {trace.messageCount !== undefined && (
+            <p className="muted">Messages: {trace.messageCount}</p>
+          )}
           <p className="muted">激活条目：</p>
           <ul className="trace-list">
             {trace.activeLoreEntries.slice(0, 6).map((n, i) => (
               <li key={i}>{n}</li>
             ))}
           </ul>
+          {trace.markerHits?.length ? (
+            <>
+              <p className="muted">Marker hits：</p>
+              <ul className="trace-list">
+                {trace.markerHits.slice(0, 8).map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {trace.filteredLoreEntries?.length ? (
+            <p className="muted small">过滤条目：{trace.filteredLoreEntries.join("、")}</p>
+          ) : null}
+          {trace.warnings?.length ? (
+            <p className="muted small">警告：{trace.warnings.slice(0, 2).join(" / ")}</p>
+          ) : null}
         </section>
       )}
     </aside>

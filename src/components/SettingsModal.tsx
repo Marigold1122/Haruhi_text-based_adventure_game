@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { type LLMSettings, type ProviderId, baseUrlPresets, saveSettings } from "@/lib/settings";
 import { refreshLLM, runLLMText } from "@/lib/llm";
+import type { PromptMode } from "@/lib/prompting/types";
+import { parseSillyTavernPresetJson } from "@/lib/sillytavern/presetParser";
+import {
+  clearStoredSillyTavernPreset,
+  loadPromptMode,
+  loadStoredSillyTavernPreset,
+  savePromptMode,
+  saveStoredSillyTavernPreset,
+  type StoredSillyTavernPreset,
+} from "@/lib/sillytavern/presetStorage";
+import { SillyTavernPresetEditor } from "./SillyTavernPresetEditor";
 
 type Props = {
   initial: LLMSettings;
@@ -9,8 +20,11 @@ type Props = {
 
 export function SettingsModal({ initial, onClose }: Props) {
   const [s, setS] = useState<LLMSettings>(initial);
+  const [promptMode, setPromptMode] = useState<PromptMode>(() => loadPromptMode());
+  const [storedPreset, setStoredPreset] = useState<StoredSillyTavernPreset | null>(() => loadStoredSillyTavernPreset());
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [presetMsg, setPresetMsg] = useState<string | null>(null);
 
   function set<K extends keyof LLMSettings>(k: K, v: LLMSettings[K]) {
     setS((cur) => ({ ...cur, [k]: v }));
@@ -19,13 +33,56 @@ export function SettingsModal({ initial, onClose }: Props) {
   function applyPreset(label: string) {
     const p = baseUrlPresets.find((x) => x.label === label);
     if (!p) return;
-    setS((cur) => ({ ...cur, baseURL: p.url, provider: p.provider }));
+    setS((cur) => ({
+      ...cur,
+      baseURL: p.url,
+      provider: p.provider,
+      ...(p.model ? { model: p.model } : {}),
+    }));
   }
 
   function commit() {
     saveSettings(s);
+    savePromptMode(promptMode);
     refreshLLM(s);
     onClose(s);
+  }
+
+  async function importSillyTavernPreset(file: File | undefined) {
+    if (!file) return;
+    setPresetMsg(null);
+    try {
+      const raw = await file.text();
+      const parsed = parseSillyTavernPresetJson(raw, file.name.replace(/\.json$/i, ""));
+      const stored: StoredSillyTavernPreset = {
+        fileName: file.name,
+        raw,
+        summary: parsed.summary,
+        diagnostics: parsed.diagnostics,
+        savedAt: new Date().toISOString(),
+      };
+      saveStoredSillyTavernPreset(stored);
+      setStoredPreset(stored);
+      setPromptMode("sillytavern-preset");
+      setPresetMsg(`已导入：${parsed.summary.name}`);
+    } catch (e) {
+      setPresetMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  function clearSillyTavernPreset() {
+    clearStoredSillyTavernPreset();
+    savePromptMode("legacy");
+    setPromptMode("legacy");
+    setStoredPreset(null);
+    setPresetMsg("已清除 ST 预设，回到 legacy 模式。");
+  }
+
+  function updateSillyTavernPreset(next: StoredSillyTavernPreset, message: string) {
+    saveStoredSillyTavernPreset(next);
+    setStoredPreset(next);
+    setPromptMode("sillytavern-preset");
+    setPresetMsg(message);
   }
 
   async function testConnection() {
@@ -48,7 +105,7 @@ export function SettingsModal({ initial, onClose }: Props) {
 
   return (
     <div className="modal-overlay" onClick={() => onClose(initial)}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
         <h2>LLM 设置</h2>
 
         <label>
@@ -132,16 +189,64 @@ export function SettingsModal({ initial, onClose }: Props) {
           </label>
         </div>
 
+        <label>
+          <span>Prompt 模式</span>
+          <select
+            value={promptMode}
+            onChange={(e) => setPromptMode(e.target.value as PromptMode)}
+          >
+            <option value="legacy">Legacy：项目内置 promptRouter</option>
+            <option value="sillytavern-preset">SillyTavern Preset：按 prompt_order 编译</option>
+          </select>
+          <small className="hint">
+            ST 模式会旁路项目内置文风 preset，仅保留最小 event_json 接口契约。
+          </small>
+        </label>
+
+        <label>
+          <span>SillyTavern Preset JSON</span>
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => {
+              void importSillyTavernPreset(e.currentTarget.files?.[0]);
+              e.currentTarget.value = "";
+            }}
+          />
+          {storedPreset ? (
+            <small className="hint">
+              已加载：{storedPreset.summary.name} · prompts {storedPreset.summary.promptCount} · prompt_order {storedPreset.summary.promptOrderCount} · regex {storedPreset.summary.regexScriptCount}
+              {storedPreset.summary.sourceMaxTokens ? ` · source max tokens ${storedPreset.summary.sourceMaxTokens}` : ""}
+            </small>
+          ) : (
+            <small className="hint">未导入。选择 ST 模式但没有 preset 时会自动回退 legacy。</small>
+          )}
+        </label>
+
+        {storedPreset ? (
+          <SillyTavernPresetEditor
+            storedPreset={storedPreset}
+            onChange={updateSillyTavernPreset}
+          />
+        ) : null}
+
         <div className="modal-actions">
           <button className="ghost-btn" onClick={testConnection} disabled={testing}>
             {testing ? "测试中…" : "测试连接"}
           </button>
+          <button className="ghost-btn" onClick={clearSillyTavernPreset}>清除 ST 预设</button>
           <div className="spacer" />
           <button className="ghost-btn" onClick={() => onClose(initial)}>取消</button>
           <button className="primary-btn" onClick={commit}>保存</button>
         </div>
 
         {testMsg && <div className="test-msg">{testMsg}</div>}
+        {presetMsg && <div className="test-msg">{presetMsg}</div>}
+        {storedPreset?.diagnostics.length ? (
+          <div className="test-msg">
+            {storedPreset.diagnostics.join(" / ")}
+          </div>
+        ) : null}
       </div>
     </div>
   );

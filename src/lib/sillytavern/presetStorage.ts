@@ -1,0 +1,59 @@
+import type { PromptMode } from "@/lib/prompting/types";
+import type { SillyTavernPresetSummary } from "./presetTypes";
+
+const MODE_KEY = "haruhi-text-adventure:prompt-mode:v1";
+const PRESET_KEY = "haruhi-text-adventure:sillytavern-preset:v1";
+
+export type StoredSillyTavernPreset = {
+  fileName: string;
+  raw: string;
+  summary: SillyTavernPresetSummary;
+  diagnostics: string[];
+  savedAt: string;
+};
+
+export function loadPromptMode(): PromptMode {
+  try {
+    const raw = localStorage.getItem(MODE_KEY);
+    return raw === "sillytavern-preset" ? "sillytavern-preset" : "legacy";
+  } catch {
+    return "legacy";
+  }
+}
+
+export function savePromptMode(mode: PromptMode): void {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    // ignore
+  }
+}
+
+export function loadStoredSillyTavernPreset(): StoredSillyTavernPreset | null {
+  try {
+    const raw = localStorage.getItem(PRESET_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredSillyTavernPreset;
+    if (!parsed.raw || !parsed.summary) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStoredSillyTavernPreset(preset: StoredSillyTavernPreset): void {
+  try {
+    localStorage.setItem(PRESET_KEY, JSON.stringify(preset));
+  } catch {
+    // ignore
+  }
+}
+
+export function clearStoredSillyTavernPreset(): void {
+  try {
+    localStorage.removeItem(PRESET_KEY);
+  } catch {
+    // ignore
+  }
+}
+

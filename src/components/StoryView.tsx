@@ -5,7 +5,6 @@ import type { Lorebook } from "@/types/lorebook";
 import type { WorldState } from "@/types/worldState";
 import type { ChatMessage, StoryTurn } from "@/types/turn";
 
-import { assemblePrompt, pickPreset } from "@/lib/promptRouter";
 import { runLLM } from "@/lib/llm";
 import { applyTurn } from "@/lib/worldState";
 import { pushDate } from "@/lib/timeAdvance";
@@ -17,6 +16,15 @@ import { renderIdentityGuide } from "@/data/identityGuide";
 import { rollEnding, generateEndingNarrative, type EndingTrigger } from "@/lib/ending";
 import { save, load, clear, type SaveBlob } from "@/lib/storage";
 import { loadSettings } from "@/lib/settings";
+import { buildPromptForTurn } from "@/lib/prompting";
+import type { PromptBuildTrace, PromptMode } from "@/lib/prompting/types";
+import { parseSillyTavernPresetJson } from "@/lib/sillytavern/presetParser";
+import {
+  loadPromptMode,
+  loadStoredSillyTavernPreset,
+  type StoredSillyTavernPreset,
+} from "@/lib/sillytavern/presetStorage";
+import type { SillyTavernChatCompletionPreset } from "@/lib/sillytavern/presetTypes";
 
 import { TopBar } from "./TopBar";
 import { MessageStream } from "./MessageStream";
@@ -44,7 +52,8 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   );
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const [trace, setTrace] = useState<{ presetName: string; activeLoreEntries: string[] } | null>(null);
+  const [trace, setTrace] = useState<PromptBuildTrace | null>(null);
+  const [promptRuntime, setPromptRuntime] = useState<PromptRuntime>(() => loadPromptRuntime());
   const [showSettings, setShowSettings] = useState(false);
   const [ending, setEnding] = useState<EndingTrigger | null>(null);
   const [endingText, setEndingText] = useState<string | null>(null);
@@ -68,7 +77,6 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setLoading(true);
 
     const decision = decideEvent(state);
-    const preset = pickPreset({ eventKind: decision.eventKind, state });
 
     // 时间推进现在完全由 LLM 上一轮的 timeAdvance 决定——这一轮调用前不再预先推进
     let next = state;
@@ -99,11 +107,14 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     });
     const identityGuide = renderIdentityGuide(next.identity);
 
-    const assembled = assemblePrompt({
+    const built = buildPromptForTurn({
+      mode: promptRuntime.mode,
+      stPreset: promptRuntime.preset,
+      stPresetName: promptRuntime.stored?.summary.name,
       card,
       lorebook,
-      preset,
       state: next,
+      eventKind: decision.eventKind,
       history: visibleHistory,
       summary: summary.text,
       userInput: promptUser,
@@ -111,9 +122,9 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       timelineContext,
       identityGuide,
     });
-    setTrace({ presetName: assembled.trace.presetName, activeLoreEntries: assembled.trace.activeLoreEntries });
+    setTrace(withRuntimeWarnings(built.trace, promptRuntime));
 
-    const { raw, turn } = await runLLM({ messages: assembled.messages, sampling: preset.sampling });
+    const { raw, turn } = await runLLM({ messages: built.messages, sampling: built.sampling });
 
     const userMsg: ChatMessage = { role: "user", content: promptUser };
     const aiMsg: ChatMessage = { role: "assistant", content: raw, parsed: turn };
@@ -171,7 +182,10 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   function onContinue() {
     if (loading) return;
     setPending(null);
-    void advance("（继续推进。请按当前节奏自然延续故事——日常段落用 summary 跳过 1-2 天，关键节点用 scene。）");
+    const input = promptRuntime.mode === "sillytavern-preset"
+      ? "（继续推进当前故事。）"
+      : "（继续推进。请按当前节奏自然延续故事——日常段落用 summary 跳过 1-2 天，关键节点用 scene。）";
+    void advance(input);
   }
 
   function doSave() {
@@ -235,7 +249,13 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       </footer>
 
       {showSettings && (
-        <SettingsModal initial={loadSettings()} onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          initial={loadSettings()}
+          onClose={() => {
+            setPromptRuntime(loadPromptRuntime());
+            setShowSettings(false);
+          }}
+        />
       )}
 
       {ending && (
@@ -249,4 +269,45 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       )}
     </div>
   );
+}
+
+type PromptRuntime = {
+  mode: PromptMode;
+  stored: StoredSillyTavernPreset | null;
+  preset: SillyTavernChatCompletionPreset | null;
+  warnings: string[];
+};
+
+function loadPromptRuntime(): PromptRuntime {
+  const mode = loadPromptMode();
+  const stored = loadStoredSillyTavernPreset();
+  if (!stored) {
+    return { mode, stored: null, preset: null, warnings: mode === "sillytavern-preset" ? ["已选择 ST 预设模式，但尚未导入 preset，当前轮次会回退 legacy。"] : [] };
+  }
+
+  try {
+    const parsed = parseSillyTavernPresetJson(stored.raw, stored.summary.name);
+    return {
+      mode,
+      stored,
+      preset: parsed.preset,
+      warnings: parsed.diagnostics,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      mode: "legacy",
+      stored,
+      preset: null,
+      warnings: [`ST preset 解析失败，已回退 legacy：${msg}`],
+    };
+  }
+}
+
+function withRuntimeWarnings(trace: PromptBuildTrace, runtime: PromptRuntime): PromptBuildTrace {
+  if (runtime.warnings.length === 0) return trace;
+  return {
+    ...trace,
+    warnings: [...(trace.warnings ?? []), ...runtime.warnings],
+  };
 }
