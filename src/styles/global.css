@@ -616,6 +616,15 @@ textarea {
 }
 .primary-btn:hover:not(:disabled) { background: #b9322a; border-color: #b9322a; }
 .test-msg { color: var(--muted); font-size: 12.5px; padding: 8px 10px; background: var(--bg-2); border-radius: 6px; }
+.st-preset-settings {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(61, 111, 182, 0.05);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .st-prompt-editor {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -755,6 +764,15 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.st-empty-note {
+  color: var(--muted);
+  background: #fff;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  padding: 12px;
   font-size: 12.5px;
   line-height: 1.6;
 }

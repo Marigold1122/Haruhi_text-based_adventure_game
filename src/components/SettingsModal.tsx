@@ -203,32 +203,45 @@ export function SettingsModal({ initial, onClose }: Props) {
           </small>
         </label>
 
-        <label>
-          <span>SillyTavern Preset JSON</span>
-          <input
-            type="file"
-            accept=".json,application/json"
-            onChange={(e) => {
-              void importSillyTavernPreset(e.currentTarget.files?.[0]);
-              e.currentTarget.value = "";
-            }}
-          />
-          {storedPreset ? (
-            <small className="hint">
-              已加载：{storedPreset.summary.name} · prompts {storedPreset.summary.promptCount} · prompt_order {storedPreset.summary.promptOrderCount} · regex {storedPreset.summary.regexScriptCount}
-              {storedPreset.summary.sourceMaxTokens ? ` · source max tokens ${storedPreset.summary.sourceMaxTokens}` : ""}
-            </small>
-          ) : (
-            <small className="hint">未导入。选择 ST 模式但没有 preset 时会自动回退 legacy。</small>
-          )}
-        </label>
+        <section className="st-preset-settings">
+          <div className="st-editor-head">
+            <div>
+              <strong>SillyTavern 预设设置</strong>
+              <small>导入 preset 后会显示酒馆式 prompt 条目开关和内容编辑。</small>
+            </div>
+          </div>
 
-        {storedPreset ? (
-          <SillyTavernPresetEditor
-            storedPreset={storedPreset}
-            onChange={updateSillyTavernPreset}
-          />
-        ) : null}
+          <label>
+            <span>Preset JSON</span>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={(e) => {
+                void importSillyTavernPreset(e.currentTarget.files?.[0]);
+                e.currentTarget.value = "";
+              }}
+            />
+            {storedPreset ? (
+              <small className="hint">
+                已加载：{storedPreset.summary.name} · prompts {storedPreset.summary.promptCount} · prompt_order {storedPreset.summary.promptOrderCount} · regex {storedPreset.summary.regexScriptCount}
+                {storedPreset.summary.sourceMaxTokens ? ` · source max tokens ${storedPreset.summary.sourceMaxTokens}` : ""}
+              </small>
+            ) : (
+              <small className="hint">未导入 preset。这里不会再隐藏；选择 JSON 后会自动启用 ST 模式并显示条目设置。</small>
+            )}
+          </label>
+
+          {storedPreset ? (
+            <SillyTavernPresetEditor
+              storedPreset={storedPreset}
+              onChange={updateSillyTavernPreset}
+            />
+          ) : (
+            <div className="st-empty-note">
+              当前没有已加载的 ST 预设。请导入 `夏瑾 双鱼座 Beta 0.40.json` 或其他 SillyTavern Chat Completion preset。
+            </div>
+          )}
+        </section>
 
         <div className="modal-actions">
           <button className="ghost-btn" onClick={testConnection} disabled={testing}>
