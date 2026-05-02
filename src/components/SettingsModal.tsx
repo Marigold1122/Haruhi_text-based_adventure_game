@@ -48,6 +48,11 @@ export function SettingsModal({ initial, onClose }: Props) {
     onClose(s);
   }
 
+  function updatePromptMode(mode: PromptMode) {
+    setPromptMode(mode);
+    savePromptMode(mode);
+  }
+
   async function importSillyTavernPreset(file: File | undefined) {
     if (!file) return;
     setPresetMsg(null);
@@ -63,7 +68,7 @@ export function SettingsModal({ initial, onClose }: Props) {
       };
       saveStoredSillyTavernPreset(stored);
       setStoredPreset(stored);
-      setPromptMode("sillytavern-preset");
+      updatePromptMode("sillytavern-preset");
       setPresetMsg(`已导入：${parsed.summary.name}`);
     } catch (e) {
       setPresetMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`);
@@ -81,7 +86,7 @@ export function SettingsModal({ initial, onClose }: Props) {
   function updateSillyTavernPreset(next: StoredSillyTavernPreset, message: string) {
     saveStoredSillyTavernPreset(next);
     setStoredPreset(next);
-    setPromptMode("sillytavern-preset");
+    updatePromptMode("sillytavern-preset");
     setPresetMsg(message);
   }
 
@@ -193,7 +198,7 @@ export function SettingsModal({ initial, onClose }: Props) {
           <span>Prompt 模式</span>
           <select
             value={promptMode}
-            onChange={(e) => setPromptMode(e.target.value as PromptMode)}
+            onChange={(e) => updatePromptMode(e.target.value as PromptMode)}
           >
             <option value="legacy">Legacy：项目内置 promptRouter</option>
             <option value="sillytavern-preset">SillyTavern Preset：按 prompt_order 编译</option>
