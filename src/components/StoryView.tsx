@@ -12,8 +12,8 @@ import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
 import { type SummaryState, emptySummary, maybeUpdateSummary, tailHistory } from "@/lib/summary";
 import { startingPointById } from "@/data/startingPoints";
-import { findOutline } from "@/data/storyOutlines";
-import type { BeatContext } from "@/lib/promptRouter";
+import { renderTimelineContext } from "@/data/worldTimeline";
+import { renderIdentityGuide } from "@/data/identityGuide";
 import { rollEnding, generateEndingNarrative, type EndingTrigger } from "@/lib/ending";
 import { save, load, clear, type SaveBlob } from "@/lib/storage";
 import { loadSettings } from "@/lib/settings";
@@ -93,31 +93,11 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const visibleHistory = tailHistory(history, summary);
 
     const sceneCast = startingPointById[next.startingPoint]?.sceneCast;
-
-    // 当前节拍上下文（按 currentBeatIndex 切片）
-    const outline = findOutline(next.startingPoint);
-    let beat: BeatContext | undefined;
-    if (outline) {
-      const idx = Math.min(next.currentBeatIndex, outline.beats.length - 1);
-      const cur = outline.beats[idx];
-      const nxt = outline.beats[idx + 1];
-      beat = {
-        arc: outline.arc,
-        currentIndex: idx,
-        total: outline.beats.length,
-        current: {
-          title: cur.title,
-          summary: cur.summary,
-          pace: cur.pace,
-          requiresChoice: cur.requiresChoice,
-          choiceHint: cur.choiceHint,
-          expectedSpan: cur.expectedSpan,
-        },
-        next: nxt
-          ? { title: nxt.title, summary: nxt.summary }
-          : undefined,
-      };
-    }
+    const timelineContext = renderTimelineContext({
+      currentIso: next.date.iso,
+      identity: next.identity,
+    });
+    const identityGuide = renderIdentityGuide(next.identity);
 
     const assembled = assemblePrompt({
       card,
@@ -128,7 +108,8 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       summary: summary.text,
       userInput: promptUser,
       sceneCast,
-      beat,
+      timelineContext,
+      identityGuide,
     });
     setTrace({ presetName: assembled.trace.presetName, activeLoreEntries: assembled.trace.activeLoreEntries });
 
@@ -138,15 +119,11 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const aiMsg: ChatMessage = { role: "assistant", content: raw, parsed: turn };
     const nextHistory = [...history, userMsg, aiMsg];
 
-    // 时间推进 + 节拍推进
+    // 时间推进——按 LLM 给的 timeAdvance 字段
     const advancedState: WorldState = {
       ...next,
       date: pushDate(next.date, turn.timeAdvance),
       flow: turn.pace === "scene" ? "chain" : "weekly",
-      // beatComplete=true 时推进到下一节拍（不超过最后一节）
-      currentBeatIndex: turn.beatComplete && outline
-        ? Math.min(next.currentBeatIndex + 1, outline.beats.length - 1)
-        : next.currentBeatIndex,
     };
     const finalState = applyTurn(advancedState, turn);
 

@@ -69,8 +69,4 @@ export type WorldState = {
 
   // 当前起点
   startingPoint: StartingPointId;
-
-  // 剧情大纲推进游标——指向 outline.beats 的当前节拍
-  // 由 LLM 输出 beatComplete=true 时推进
-  currentBeatIndex: number;
 };

@@ -87,6 +87,63 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
 }
+.identity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.identity-card {
+  text-align: left;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 120ms;
+}
+.identity-card.active {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.identity-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+.identity-desc {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.form-row > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.form-row input,
+.form-row textarea {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+}
+.form-row input:focus,
+.form-row textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.muted.small {
+  font-size: 12.5px;
+  margin: 4px 0 12px;
+}
 .point-card {
   text-align: left;
   padding: 16px;

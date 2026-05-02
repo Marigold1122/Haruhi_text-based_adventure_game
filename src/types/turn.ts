@@ -46,8 +46,6 @@ export type StoryTurn = {
   requiresChoice: boolean;         // 本轮结束时是否需要玩家做选择
   choices: string[];               // 仅在 requiresChoice 为 true 时有意义；2-4 个完整行动短句
 
-  // 节拍机制：本轮叙述是否完成了当前 outline.beat（如 true，下一轮自动推进到下一节拍）
-  beatComplete: boolean;
 
   // 事件链相关（可选）
   chain?: {

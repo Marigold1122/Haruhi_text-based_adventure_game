@@ -3,18 +3,17 @@ import { useState } from "react";
 import { StartScreen } from "@/components/StartScreen";
 import { StoryView } from "@/components/StoryView";
 
-import { characterRegistry } from "@/data/characters";
 import { hsuzumiyaLore } from "@/data/lorebooks/hsuzumiya_lore";
 import { startingPointById } from "@/data/startingPoints";
 
-import type { StartingPointId, WorldState } from "@/types/worldState";
+import type { WorldState } from "@/types/worldState";
 import type { CharacterCardV2 } from "@/types/character";
+import type { IdentityLevel } from "@/types/lorebook";
 import { load } from "@/lib/storage";
 
 type SessionConfig = {
-  characterId: string;
-  customCard?: CharacterCardV2;
-  startingPointId: StartingPointId;
+  card: CharacterCardV2;
+  identity: IdentityLevel;
   initialState: WorldState;
 };
 
@@ -22,24 +21,16 @@ export default function App() {
   const [session, setSession] = useState<SessionConfig | null>(null);
   const [resumeFlag, setResumeFlag] = useState(false);
 
-  function startSession(opts: {
-    characterId: string;
-    startingPointId: StartingPointId;
-    customCard?: CharacterCardV2;
-  }) {
-    const point = startingPointById[opts.startingPointId];
-    if (!point) return;
+  function startSession(opts: { card: CharacterCardV2; identity: IdentityLevel }) {
+    // 起点固定为入学日；玩家身份覆盖默认
+    const point = startingPointById["north_high_entrance"]!;
     const initialState: WorldState = {
       ...point.initialState,
-      playerCharacterId: opts.characterId,
+      playerCharacterId: "__custom__",
+      identity: opts.identity,
     };
     setResumeFlag(false);
-    setSession({
-      characterId: opts.characterId,
-      customCard: opts.customCard,
-      startingPointId: opts.startingPointId,
-      initialState,
-    });
+    setSession({ card: opts.card, identity: opts.identity, initialState });
   }
 
   function reset() {
@@ -47,25 +38,23 @@ export default function App() {
     setResumeFlag(false);
   }
 
-  // 起点屏未渲染时检查是否有存档可恢复
   if (!session) {
     const blob = load();
     return (
       <>
         <StartScreen onStart={startSession} />
-        {blob && !resumeFlag && (
+        {blob && !resumeFlag && blob.customCard && (
           <div className="resume-banner">
             发现存档（{new Date(blob.savedAt).toLocaleString()}）。
             <button
               className="primary-btn"
               onClick={() => {
                 const point = startingPointById[blob.state.startingPoint];
-                if (!point) return;
+                if (!point || !blob.customCard) return;
                 setSession({
-                  characterId: blob.characterId,
-                  customCard: blob.customCard ?? undefined,
-                  startingPointId: blob.state.startingPoint,
-                  initialState: { ...point.initialState, playerCharacterId: blob.characterId },
+                  card: blob.customCard,
+                  identity: blob.state.identity,
+                  initialState: blob.state,
                 });
                 setResumeFlag(true);
               }}
@@ -76,24 +65,13 @@ export default function App() {
     );
   }
 
-  const card =
-    session.customCard ?? characterRegistry[session.characterId];
-  if (!card) {
-    return (
-      <div className="start-screen">
-        <p>未找到角色卡。</p>
-        <button onClick={reset}>返回</button>
-      </div>
-    );
-  }
-
   return (
     <StoryView
-      card={card}
+      card={session.card}
       lorebook={hsuzumiyaLore}
       initialState={session.initialState}
-      characterId={session.characterId}
-      customCard={session.customCard}
+      characterId="__custom__"
+      customCard={session.card}
       resumeFrom={resumeFlag ? load() : null}
       onReset={reset}
     />

@@ -99,7 +99,6 @@ export function parseEventJson(text: string): StoryTurn | null {
   const choices = requiresChoice
     ? rawChoices.filter((c) => typeof c === "string").slice(0, 4)
     : [];
-  const beatComplete = typeof o.beatComplete === "boolean" ? o.beatComplete : false;
 
   return {
     eventTitle: o.eventTitle,
@@ -113,7 +112,6 @@ export function parseEventJson(text: string): StoryTurn | null {
     timeAdvance,
     requiresChoice,
     choices,
-    beatComplete,
     chain: o.chain as StoryTurn["chain"],
   };
 }
@@ -139,7 +137,6 @@ export function fallbackTurn(reason = "AI 输出无法解析", raw?: string): St
     timeAdvance: {},
     requiresChoice: true,
     choices: ["重试本轮", "尝试主动开口", "检查 LLM 设置"],
-    beatComplete: false,
   };
 }
 
@@ -196,7 +193,6 @@ function wrap(turn: Partial<StoryTurn> & Pick<StoryTurn, "eventTitle" | "narrati
     pace: "summary",
     timeAdvance: { days: 1 },
     requiresChoice: false,
-    beatComplete: false,
     ...turn,
   } as StoryTurn;
   return `<event_json>\n${JSON.stringify(filled, null, 2)}\n</event_json>`;
