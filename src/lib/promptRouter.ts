@@ -21,7 +21,7 @@ import type { Preset, EventPresetKind } from "@/types/preset";
 import type { WorldState } from "@/types/worldState";
 import type { ChatMessage } from "@/types/turn";
 
-import { presetRegistry } from "@/data/presets";
+import { presetRegistry, chainPresets } from "@/data/presets";
 
 // ------------------------------------------------------------------
 // 1) Preset 选择
@@ -31,9 +31,10 @@ export function pickPreset(opts: {
   eventKind: EventPresetKind;
   state: WorldState;
 }): Preset {
-  // 事件链中强制走 supernatural preset（除非未来扩展按 chain.id 路由）
-  if (opts.state.activeChain) {
-    return presetRegistry.supernatural;
+  // 事件链中：优先用该链的专属 Preset；找不到则回退 supernatural
+  const chain = opts.state.activeChain;
+  if (chain) {
+    return chainPresets[chain.id] ?? presetRegistry.supernatural;
   }
   return presetRegistry[opts.eventKind] ?? presetRegistry.daily;
 }
@@ -98,8 +99,9 @@ export function selectLoreEntries(opts: {
 export function renderAuthorsNote(opts: {
   preset: Preset;
   state: WorldState;
+  sceneCast?: string;
 }): string {
-  const { preset, state } = opts;
+  const { preset, state, sceneCast } = opts;
 
   const worldStateBlock = [
     `· 春日满足度（隐藏）：${state.haruhiSatisfaction}`,
@@ -116,12 +118,15 @@ export function renderAuthorsNote(opts: {
     ? `· 事件链 ${state.activeChain.id} 第 ${state.activeChain.step}/${state.activeChain.totalSteps} 节${state.activeChain.endMarker ? `（结束标记：${state.activeChain.endMarker}）` : ""}${state.activeChain.notes ? `\n  备注：${state.activeChain.notes}` : ""}`
     : "· 不在事件链中";
 
+  const sceneCastBlock = sceneCast ?? "（未配置 sceneCast）";
+
   return preset.authors_note_template
     .replace(/\{\{date\}\}/g, state.date.display)
     .replace(/\{\{flow\}\}/g, flowLabel(state.flow))
     .replace(/\{\{identity\}\}/g, identityLabel(state.identity))
     .replace(/\{\{world_state\}\}/g, worldStateBlock)
-    .replace(/\{\{chain\}\}/g, chainBlock);
+    .replace(/\{\{chain\}\}/g, chainBlock)
+    .replace(/\{\{scene_cast\}\}/g, sceneCastBlock);
 }
 
 function flowLabel(flow: WorldState["flow"]): string {
@@ -165,8 +170,9 @@ export function assemblePrompt(opts: {
   history: ChatMessage[];        // 完整聊天历史（不含本轮 user）
   summary?: string | null;       // 滚动摘要（可选）
   userInput: string;             // 本轮玩家行动 / 推进信号
+  sceneCast?: string;            // 本轮场景人员清单（高优先级注入）
 }): AssembledPrompt {
-  const { card, lorebook, preset, state, history, summary, userInput } = opts;
+  const { card, lorebook, preset, state, history, summary, userInput, sceneCast } = opts;
   const cardData = card.data;
 
   // 取最近 N 轮文本作为关键词扫描素材（含本轮输入）
@@ -179,7 +185,7 @@ export function assemblePrompt(opts: {
   const loreBefore = lore.filter((e) => e.position !== "after_char");
   const loreAfter = lore.filter((e) => e.position === "after_char" || e.position === undefined);
 
-  const authorsNote = renderAuthorsNote({ preset, state });
+  const authorsNote = renderAuthorsNote({ preset, state, sceneCast });
 
   // ===== ① + ② + ③(before_char) + ④ 合并到一条 system 消息 =====
   // 这是酒馆默认行为：char 描述与世界书 before_char 部分都属于"角色之前"的固定上下文。

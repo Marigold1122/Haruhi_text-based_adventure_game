@@ -1,12 +1,14 @@
 import type { WorldState } from "@/types/worldState";
+import type { SummaryState } from "@/lib/summary";
 
 type Props = {
   state: WorldState;
   characterName: string;
   trace?: { presetName: string; activeLoreEntries: string[] } | null;
+  summaryStatus?: SummaryState | null;
 };
 
-export function StatusPanel({ state, characterName, trace }: Props) {
+export function StatusPanel({ state, characterName, trace, summaryStatus }: Props) {
   return (
     <aside className="status-panel">
       <section>
@@ -52,6 +54,13 @@ export function StatusPanel({ state, characterName, trace }: Props) {
           <p>
             {state.activeChain.id} · 第 {state.activeChain.step}/{state.activeChain.totalSteps} 节
           </p>
+        </section>
+      )}
+
+      {summaryStatus?.text && (
+        <section>
+          <h4>滚动摘要</h4>
+          <p className="muted">已折叠 {summaryStatus.collapsedUntilIndex} 条历史</p>
         </section>
       )}
 

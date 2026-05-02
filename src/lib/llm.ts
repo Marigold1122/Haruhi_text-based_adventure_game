@@ -14,49 +14,98 @@ export type LLMCall = (
 ) => Promise<string>;
 
 // ------------------------------------------------------------------
-// 解析：从 assistant 文本里抽出 <event_json> 块
+// 解析：从 assistant 文本里抽出结构化 JSON。
+// 三档兜底，因为不同模型对自定义标签遵循度差异很大：
+//   ① <event_json>...</event_json>（设计协议）
+//   ② ```json ... ``` 代码块
+//   ③ 文本里第一个看起来完整的 { ... } 对象
 // ------------------------------------------------------------------
 
 const EVENT_JSON_RE = /<event_json>([\s\S]*?)<\/event_json>/i;
+const FENCED_JSON_RE = /```(?:json)?\s*([\s\S]*?)\s*```/i;
+
+function tryParse(s: string): unknown | null {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+function extractBareJsonObject(text: string): unknown | null {
+  // 找第一个 { ，再用花括号配对找到对应的 }
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (escape) { escape = false; continue; }
+      if (ch === "\\") { escape = true; continue; }
+      if (ch === '"') { inStr = false; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return tryParse(text.slice(start, i + 1));
+    }
+  }
+  return null;
+}
 
 export function parseEventJson(text: string): StoryTurn | null {
-  const m = text.match(EVENT_JSON_RE);
-  if (!m) return null;
-  try {
-    const obj = JSON.parse(m[1]);
-    if (typeof obj.eventTitle !== "string") return null;
-    if (typeof obj.narration !== "string") return null;
-    if (!Array.isArray(obj.choices)) return null;
-    return {
-      eventTitle: obj.eventTitle,
-      scene: obj.scene ?? "",
-      time: obj.time ?? "",
-      mood: obj.mood ?? "",
-      narration: obj.narration,
-      dialogue: Array.isArray(obj.dialogue) ? obj.dialogue : [],
-      stateChanges: obj.stateChanges ?? {},
-      choices: obj.choices.slice(0, 4),
-      chain: obj.chain,
-    };
-  } catch {
-    return null;
+  let obj: unknown | null = null;
+
+  // ① 标签形式
+  const tagged = text.match(EVENT_JSON_RE);
+  if (tagged) obj = tryParse(tagged[1].trim());
+
+  // ② markdown 代码块
+  if (!obj) {
+    const fenced = text.match(FENCED_JSON_RE);
+    if (fenced) obj = tryParse(fenced[1].trim());
   }
+
+  // ③ 文本里第一个完整对象
+  if (!obj) obj = extractBareJsonObject(text);
+
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.eventTitle !== "string") return null;
+  if (typeof o.narration !== "string") return null;
+  if (!Array.isArray(o.choices)) return null;
+
+  return {
+    eventTitle: o.eventTitle,
+    scene: typeof o.scene === "string" ? o.scene : "",
+    time: typeof o.time === "string" ? o.time : "",
+    mood: typeof o.mood === "string" ? o.mood : "",
+    narration: o.narration,
+    dialogue: Array.isArray(o.dialogue) ? (o.dialogue as StoryTurn["dialogue"]) : [],
+    stateChanges: (o.stateChanges as StoryTurn["stateChanges"]) ?? {},
+    choices: (o.choices as string[]).filter((c) => typeof c === "string").slice(0, 4),
+    chain: o.chain as StoryTurn["chain"],
+  };
 }
 
 // ------------------------------------------------------------------
 // Fallback turn：解析失败时给一个不破坏体验的占位事件
+// 同时把 LLM 的原始输出截一段塞进 narration，方便用户/开发者直接看到模型实际说了什么
 // ------------------------------------------------------------------
 
-export function fallbackTurn(reason = "AI 输出无法解析"): StoryTurn {
+export function fallbackTurn(reason = "AI 输出无法解析", raw?: string): StoryTurn {
+  const preview = raw
+    ? `\n\n[LLM 原始输出预览（共 ${raw.length} 字）]\n${raw.slice(0, 1500)}${raw.length > 1500 ? "……（剩余已截断）" : ""}`
+    : "";
   return {
     eventTitle: "叙事暂时停顿",
     scene: "未知",
     time: "—",
     mood: "停滞",
-    narration: `（${reason}。空气里出现一道短暂的停顿，世界正在重新对焦。）`,
+    narration: `（${reason}。空气里出现一道短暂的停顿，世界正在重新对焦。）${preview}`,
     dialogue: [],
     stateChanges: {},
-    choices: ["再观察一会儿", "尝试主动开口"],
+    choices: ["重试本轮", "尝试主动开口", "检查 LLM 设置"],
   };
 }
 
@@ -349,29 +398,56 @@ function truncate(s: string, n: number): string {
 }
 
 // ------------------------------------------------------------------
-// 真实 API 适配口（占位）
+// 真实 LLM 路由：根据 settings.provider 切换 provider
 // ------------------------------------------------------------------
 
-export const realLLM: LLMCall = async (_messages, _sampling) => {
-  // TODO: 接入 fetch("/api/chat", {...})；当前样品保持 mock。
-  throw new Error("realLLM 未启用，请配置后端代理或在 main.tsx 切换为 mockLLM");
-};
+import { openAICompatibleLLM, anthropicLLM, withRetry } from "./llmProviders";
+import { loadSettings } from "./settings";
+import type { LLMSettings } from "./settings";
 
-// 可由 UI 切换：默认 mock
-export let activeLLM: LLMCall = mockLLM;
+export function buildLLM(settings: LLMSettings): LLMCall {
+  if (settings.provider === "mock") return mockLLM;
+  if (settings.provider === "anthropic") return withRetry(anthropicLLM(settings));
+  return withRetry(openAICompatibleLLM(settings));
+}
+
+// 可由 UI 切换；默认从 localStorage 读
+export let activeLLM: LLMCall = buildLLM(loadSettings());
 
 export function setLLM(impl: LLMCall) {
   activeLLM = impl;
+}
+
+// 给 SettingsModal 用：保存配置后自动重建 activeLLM
+export function refreshLLM(settings: LLMSettings): void {
+  activeLLM = buildLLM(settings);
 }
 
 // 给 UI 用的高层封装：完整一次调用并保底解析
 export async function runLLM(opts: {
   messages: ChatMessage[];
   sampling: SamplingParams;
-  // 用于 mock 路由分支判断（暂未使用，预留）
   state?: WorldState;
 }): Promise<{ raw: string; turn: StoryTurn }> {
-  const raw = await activeLLM(opts.messages, opts.sampling);
-  const turn = parseEventJson(raw) ?? fallbackTurn("AI 输出未通过 JSON 校验");
-  return { raw, turn };
+  try {
+    const raw = await activeLLM(opts.messages, opts.sampling);
+    const parsed = parseEventJson(raw);
+    if (!parsed) {
+      // 开发者控制台保留完整输出，便于排查
+      console.warn("[runLLM] 解析失败，原始输出：", raw);
+    }
+    const turn = parsed ?? fallbackTurn("AI 输出未通过 JSON 校验", raw);
+    return { raw, turn };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { raw: "", turn: fallbackTurn(`LLM 调用失败：${msg}`) };
+  }
+}
+
+// 简单文本调用（不要求 <event_json>），用于摘要 / 结局小传 / 随机角色卡
+export async function runLLMText(opts: {
+  messages: ChatMessage[];
+  sampling: SamplingParams;
+}): Promise<string> {
+  return activeLLM(opts.messages, opts.sampling);
 }

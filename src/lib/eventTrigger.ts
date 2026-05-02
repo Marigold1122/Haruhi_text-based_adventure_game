@@ -9,11 +9,12 @@
 
 import type { WorldState } from "@/types/worldState";
 import type { EventPresetKind } from "@/types/preset";
+import { pickChainForState } from "@/data/eventChains";
 
 export type TriggerDecision = {
   eventKind: EventPresetKind;
-  // 若触发新事件链，这里给出建议链 id；由上层决定是否真正进入
-  proposedChain?: string;
+  // 若触发新事件链，这里给出建议链 id 与节数；由上层决定是否真正进入
+  proposedChain?: { id: string; totalSteps: number };
   reason: string;
 };
 
@@ -83,19 +84,29 @@ export function decideEvent(state: WorldState, rng: () => number = Math.random):
     if (r <= acc) { chosen = k; break; }
   }
 
-  // 若抽中 supernatural，决定具体链 id
-  let proposedChain: string | undefined;
+  // 若抽中 supernatural，从事件链定义里挑一条匹配当前状态的链
+  let proposedChain: TriggerDecision["proposedChain"];
   let reason = `rolled ${chosen} (r=${r.toFixed(3)}, identity=${state.identity})`;
   if (chosen === "supernatural") {
-    if (state.haruhiSatisfaction <= -30) {
-      proposedChain = "closed_space";
-      reason += "; haruhi satisfaction low → closed_space candidate";
+    const chain = pickChainForState(state);
+    if (chain) {
+      proposedChain = { id: chain.id, totalSteps: chain.totalStepsHint };
+      reason += `; matched chain ${chain.id}`;
     } else {
-      // 没有足够动机，回退到 encounter
+      // 没有合适的链可进入，回退 encounter
       chosen = "encounter";
-      reason += "; supernatural rolled but no motive → fallback to encounter";
+      reason += "; supernatural rolled but no chain matched → fallback to encounter";
     }
   }
 
   return { eventKind: chosen, proposedChain, reason };
+}
+
+// 手动触发某条事件链（供 UI 的"调试 / 强制触发"使用）
+export function manualTrigger(chainId: string, totalSteps = 4): TriggerDecision {
+  return {
+    eventKind: "supernatural",
+    proposedChain: { id: chainId, totalSteps },
+    reason: `manual trigger: ${chainId}`,
+  };
 }

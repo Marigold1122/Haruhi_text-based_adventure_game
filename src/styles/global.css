@@ -468,3 +468,82 @@ textarea {
     border-top: 1px solid var(--line);
   }
 }
+
+/* ============ Top bar actions ============ */
+.top-right { display: flex; gap: 6px; align-items: center; }
+.start-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.start-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ============ Modal ============ */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(20, 22, 28, 0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(2px);
+}
+.modal {
+  background: #fff; border-radius: 12px; padding: 24px;
+  width: 520px; max-width: 92vw; max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.18);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.modal h2 { margin: 0 0 4px; font-size: 18px; }
+.modal label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.modal label > span { font-weight: 500; }
+.modal input, .modal select, .modal textarea {
+  font-family: inherit; font-size: 14px;
+  padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px;
+  background: #fff; color: var(--text);
+}
+.modal input:focus, .modal select:focus, .modal textarea:focus { outline: none; border-color: var(--accent); }
+.modal .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal .hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.modal .preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.modal .preset-btn {
+  font-size: 12px; padding: 4px 9px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--bg-2);
+}
+.modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.modal-actions .spacer { flex: 1; }
+.primary-btn {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+  font-weight: 600;
+}
+.primary-btn:hover:not(:disabled) { background: #b9322a; border-color: #b9322a; }
+.test-msg { color: var(--muted); font-size: 12.5px; padding: 8px 10px; background: var(--bg-2); border-radius: 6px; }
+.card-preview {
+  border-top: 1px solid var(--line); margin-top: 8px; padding-top: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.card-preview h3 { margin: 0; font-size: 16px; }
+
+/* ============ Resume banner ============ */
+.resume-banner {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px;
+  padding: 10px 14px; font-size: 13px; box-shadow: var(--shadow);
+  display: flex; gap: 12px; align-items: center;
+}
+
+/* ============ Ending screen ============ */
+.ending-screen {
+  position: fixed; inset: 0; background: rgba(20, 22, 28, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; padding: 24px;
+}
+.ending-card {
+  background: #fff; border-radius: 14px; padding: 32px;
+  width: 720px; max-width: 96vw; max-height: 92vh; overflow-y: auto;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.28);
+}
+.ending-tag {
+  display: inline-block; background: var(--accent); color: #fff;
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  letter-spacing: 1px; margin-bottom: 8px;
+}
+.ending-card h1 { margin: 0 0 6px; font-size: 28px; }
+.ending-error { color: var(--accent); font-size: 13px; margin: 8px 0; }
+.ending-loading { color: var(--muted); font-size: 14px; }
+.ending-text { line-height: 1.85; font-size: 15px; }
+.ending-text p { margin: 0 0 12px; }
+.ending-card footer { margin-top: 20px; display: flex; justify-content: flex-end; }
