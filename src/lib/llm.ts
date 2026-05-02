@@ -53,6 +53,35 @@ function extractBareJsonObject(text: string): unknown | null {
   return null;
 }
 
+function stripGeneratedTextPrefix(text: string): string {
+  let cleaned = text.trim();
+  let previous = "";
+  while (cleaned && cleaned !== previous) {
+    previous = cleaned;
+    cleaned = cleaned
+      .replace(/^\uFEFF/, "")
+      .replace(/^\s*<\s*(?:正文|文本|内容|输出|回复|回答|body|content|response|answer|narration|story)\s*>\s*/i, "")
+      .replace(/^\s*<\/\s*(?:正文|文本|内容|输出|回复|回答|body|content|response|answer|narration|story)\s*>\s*/i, "")
+      .replace(/^\s*[【\[]\s*(?:正文|文本|内容|输出|回复|回答)\s*[】\]]\s*/, "")
+      .replace(/^\s*(?:正文内容|正文如下|正文|文本|内容|输出|回复|回答)\s*[:：]\s*/, "");
+  }
+  return cleaned
+    .replace(/\s*<\/\s*(?:正文|文本|内容|输出|回复|回答|body|content|response|answer|narration|story)\s*>\s*$/i, "")
+    .trim();
+}
+
+function cleanDialogue(value: unknown): StoryTurn["dialogue"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((line): line is Record<string, unknown> => Boolean(line) && typeof line === "object")
+    .map((line) => ({
+      speaker: typeof line.speaker === "string" ? stripGeneratedTextPrefix(line.speaker) : "",
+      mood: typeof line.mood === "string" ? stripGeneratedTextPrefix(line.mood) : undefined,
+      text: typeof line.text === "string" ? stripGeneratedTextPrefix(line.text) : "",
+    }))
+    .filter((line) => line.speaker || line.text);
+}
+
 export function parseEventJson(text: string): StoryTurn | null {
   let obj: unknown | null = null;
 
@@ -97,16 +126,16 @@ export function parseEventJson(text: string): StoryTurn | null {
     typeof o.requiresChoice === "boolean" ? o.requiresChoice : false;
   const rawChoices = (o.choices as string[]) ?? [];
   const choices = requiresChoice
-    ? rawChoices.filter((c) => typeof c === "string").slice(0, 4)
+    ? rawChoices.filter((c) => typeof c === "string").map(stripGeneratedTextPrefix).slice(0, 4)
     : [];
 
   return {
-    eventTitle: o.eventTitle,
-    scene: typeof o.scene === "string" ? o.scene : "",
-    time: typeof o.time === "string" ? o.time : "",
-    mood: typeof o.mood === "string" ? o.mood : "",
-    narration: o.narration,
-    dialogue: Array.isArray(o.dialogue) ? (o.dialogue as StoryTurn["dialogue"]) : [],
+    eventTitle: stripGeneratedTextPrefix(o.eventTitle),
+    scene: typeof o.scene === "string" ? stripGeneratedTextPrefix(o.scene) : "",
+    time: typeof o.time === "string" ? stripGeneratedTextPrefix(o.time) : "",
+    mood: typeof o.mood === "string" ? stripGeneratedTextPrefix(o.mood) : "",
+    narration: stripGeneratedTextPrefix(o.narration),
+    dialogue: cleanDialogue(o.dialogue),
     stateChanges: (o.stateChanges as StoryTurn["stateChanges"]) ?? {},
     pace,
     timeAdvance,
@@ -122,15 +151,29 @@ export function parseEventJson(text: string): StoryTurn | null {
 // ------------------------------------------------------------------
 
 export function fallbackTurn(reason = "AI 输出无法解析", raw?: string): StoryTurn {
-  const preview = raw
-    ? `\n\n[LLM 原始输出预览（共 ${raw.length} 字）]\n${raw.slice(0, 1500)}${raw.length > 1500 ? "……（剩余已截断）" : ""}`
-    : "";
+  const cleanedRaw = raw ? stripGeneratedTextPrefix(raw) : "";
+  if (cleanedRaw) {
+    return {
+      eventTitle: "未结构化叙事",
+      scene: "未知",
+      time: "—",
+      mood: "继续",
+      narration: cleanedRaw,
+      dialogue: [],
+      stateChanges: {},
+      pace: "scene",
+      timeAdvance: {},
+      requiresChoice: true,
+      choices: ["继续这段叙事", "重试本轮", "检查 LLM 设置"],
+    };
+  }
+
   return {
     eventTitle: "叙事暂时停顿",
     scene: "未知",
     time: "—",
     mood: "停滞",
-    narration: `（${reason}。空气里出现一道短暂的停顿，世界正在重新对焦。）${preview}`,
+    narration: `（${reason}。空气里出现一道短暂的停顿，世界正在重新对焦。）`,
     dialogue: [],
     stateChanges: {},
     pace: "scene",
