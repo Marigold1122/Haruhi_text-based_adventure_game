@@ -380,6 +380,38 @@ textarea {
   margin: 0;
   font-size: 17px;
 }
+.turn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.mini-btn {
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--muted);
+}
+.turn-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.turn-editor textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  line-height: 1.7;
+}
+.turn-editor-actions {
+  display: flex;
+  gap: 8px;
+}
 .turn-tags {
   display: flex;
   flex-wrap: wrap;
@@ -461,6 +493,10 @@ textarea {
   margin: 0 auto 16px;
   color: var(--muted);
   font-size: 13px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 .loading .dots {
   display: inline-block;
@@ -473,6 +509,17 @@ textarea {
 @keyframes dots {
   0%   { width: 0; }
   100% { width: 18px; }
+}
+.thinking-timer {
+  display: inline-flex;
+  align-items: center;
+  color: var(--school-blue);
+  background: rgba(61, 111, 182, 0.1);
+  border: 1px solid rgba(61, 111, 182, 0.18);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* footer 选项区 */

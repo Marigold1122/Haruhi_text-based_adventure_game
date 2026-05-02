@@ -6,6 +6,7 @@ import { downloadCardJson } from "@/lib/cardIO";
 import { identityGuides } from "@/data/identityGuide";
 import { SettingsModal } from "./SettingsModal";
 import { loadSettings } from "@/lib/settings";
+import { ThinkingTimer } from "./ThinkingTimer";
 
 type Props = {
   onStart: (opts: { card: CharacterCardV2; identity: IdentityLevel }) => void;
@@ -126,7 +127,11 @@ export function StartScreen({ onStart }: Props) {
       <section className="start-section">
         {!card ? (
           <button className="start-button" onClick={generate} disabled={generating}>
-            {generating ? "正在生成你的角色卡……" : "生成角色卡"}
+            {generating ? (
+              <>
+                正在生成你的角色卡…… <ThinkingTimer active={generating} />
+              </>
+            ) : "生成角色卡"}
           </button>
         ) : (
           <div className="card-preview">

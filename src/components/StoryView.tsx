@@ -43,12 +43,22 @@ type Props = {
   onReset: () => void;
 };
 
+type TurnCheckpoint = {
+  state: WorldState;
+  history: ChatMessage[];
+  summary: SummaryState;
+  userInput: string;
+};
+
 export function StoryView({ card, lorebook, initialState, characterId, customCard, resumeFrom, onReset }: Props) {
   const [state, setState] = useState<WorldState>(resumeFrom?.state ?? initialState);
   const [history, setHistory] = useState<ChatMessage[]>(resumeFrom?.history ?? []);
   const [summary, setSummary] = useState<SummaryState>(resumeFrom?.summary ?? emptySummary);
   const [turns, setTurns] = useState<StoryTurn[]>(
     () => (resumeFrom?.history ?? []).flatMap((m) => (m.parsed ? [m.parsed] : [])),
+  );
+  const [turnCheckpoints, setTurnCheckpoints] = useState<TurnCheckpoint[]>(
+    () => buildTurnCheckpoints(initialState, resumeFrom?.history ?? []),
   );
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -74,12 +84,27 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   const lastTurn = useMemo(() => turns[turns.length - 1], [turns]);
 
   async function advance(userInput: string) {
+    await advanceFrom({
+      userInput,
+      baseState: state,
+      baseHistory: history,
+      baseSummary: summary,
+    });
+  }
+
+  async function advanceFrom(opts: {
+    userInput: string;
+    baseState: WorldState;
+    baseHistory: ChatMessage[];
+    baseSummary: SummaryState;
+  }) {
+    const { userInput, baseState, baseHistory, baseSummary } = opts;
     setLoading(true);
 
-    const decision = decideEvent(state);
+    const decision = decideEvent(baseState);
 
     // 时间推进现在完全由 LLM 上一轮的 timeAdvance 决定——这一轮调用前不再预先推进
-    let next = state;
+    let next = baseState;
 
     if (!next.activeChain && decision.proposedChain) {
       next = {
@@ -98,7 +123,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
         : userInput;
 
     // Rolling Summary：先把"已折叠"的尾部历史拿出来
-    const visibleHistory = tailHistory(history, summary);
+    const visibleHistory = tailHistory(baseHistory, baseSummary);
 
     const sceneCast = startingPointById[next.startingPoint]?.sceneCast;
     const timelineContext = renderTimelineContext({
@@ -116,7 +141,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       state: next,
       eventKind: decision.eventKind,
       history: visibleHistory,
-      summary: summary.text,
+      summary: baseSummary.text,
       userInput: promptUser,
       sceneCast,
       timelineContext,
@@ -128,7 +153,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
 
     const userMsg: ChatMessage = { role: "user", content: promptUser };
     const aiMsg: ChatMessage = { role: "assistant", content: raw, parsed: turn };
-    const nextHistory = [...history, userMsg, aiMsg];
+    const nextHistory = [...baseHistory, userMsg, aiMsg];
 
     // 时间推进——按 LLM 给的 timeAdvance 字段
     const advancedState: WorldState = {
@@ -139,10 +164,14 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const finalState = applyTurn(advancedState, turn);
 
     // 异步更新 Rolling Summary（不阻塞 UI）
-    maybeUpdateSummary({ history: nextHistory, prev: summary }).then(setSummary);
+    maybeUpdateSummary({ history: nextHistory, prev: baseSummary }).then(setSummary);
 
     setHistory(nextHistory);
     setTurns((prev) => [...prev, turn]);
+    setTurnCheckpoints((prev) => [
+      ...prev,
+      { state: baseState, history: baseHistory, summary: baseSummary, userInput: promptUser },
+    ]);
     setState(finalState);
     setLoading(false);
     setPending(null);
@@ -152,6 +181,43 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     if (trigger) {
       void runEnding(trigger, finalState, nextHistory);
     }
+  }
+
+  function deleteLatestTurn() {
+    if (loading || turns.length === 0) return;
+    const checkpoint = turnCheckpoints[turnCheckpoints.length - 1];
+    if (!checkpoint) return;
+    setState(checkpoint.state);
+    setHistory(checkpoint.history);
+    setSummary(checkpoint.summary);
+    setTurns((prev) => prev.slice(0, -1));
+    setTurnCheckpoints((prev) => prev.slice(0, -1));
+    setPending(null);
+    setTrace(null);
+  }
+
+  function regenerateLatestTurn() {
+    if (loading || turns.length === 0) return;
+    const checkpoint = turnCheckpoints[turnCheckpoints.length - 1];
+    if (!checkpoint) return;
+    setState(checkpoint.state);
+    setHistory(checkpoint.history);
+    setSummary(checkpoint.summary);
+    setTurns((prev) => prev.slice(0, -1));
+    setTurnCheckpoints((prev) => prev.slice(0, -1));
+    setPending(checkpoint.userInput);
+    void advanceFrom({
+      userInput: checkpoint.userInput,
+      baseState: checkpoint.state,
+      baseHistory: checkpoint.history,
+      baseSummary: checkpoint.summary,
+    });
+  }
+
+  function updateLatestTurn(updated: StoryTurn) {
+    if (turns.length === 0) return;
+    setTurns((prev) => [...prev.slice(0, -1), updated]);
+    setHistory((prev) => replaceLastParsedAssistant(prev, updated));
   }
 
   async function runEnding(trigger: EndingTrigger, finalState: WorldState, nextHistory: ChatMessage[]) {
@@ -205,6 +271,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setHistory(blob.history);
     setSummary(blob.summary ?? emptySummary);
     setTurns(blob.history.flatMap((m) => (m.parsed ? [m.parsed] : [])));
+    setTurnCheckpoints(buildTurnCheckpoints(initialState, blob.history));
     alert("已载入存档。");
   }
 
@@ -232,7 +299,14 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
 
       <div className="story-body">
         <main className="story-main">
-          <MessageStream turns={turns} pendingUserAction={pending} loading={loading} />
+          <MessageStream
+            turns={turns}
+            pendingUserAction={pending}
+            loading={loading}
+            onDeleteLatest={deleteLatestTurn}
+            onRegenerateLatest={regenerateLatestTurn}
+            onUpdateLatest={updateLatestTurn}
+          />
         </main>
 
         <StatusPanel state={state} characterName={card.data.name} trace={trace} summaryStatus={summary} />
@@ -310,4 +384,52 @@ function withRuntimeWarnings(trace: PromptBuildTrace, runtime: PromptRuntime): P
     ...trace,
     warnings: [...(trace.warnings ?? []), ...runtime.warnings],
   };
+}
+
+function replaceLastParsedAssistant(history: ChatMessage[], turn: StoryTurn): ChatMessage[] {
+  const next = [...history];
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    const msg = next[i];
+    if (msg.role === "assistant" && msg.parsed) {
+      next[i] = {
+        ...msg,
+        parsed: turn,
+        content: serializeTurn(turn),
+      };
+      break;
+    }
+  }
+  return next;
+}
+
+function serializeTurn(turn: StoryTurn): string {
+  return `<event_json>\n${JSON.stringify(turn, null, 2)}\n</event_json>`;
+}
+
+function buildTurnCheckpoints(initialState: WorldState, history: ChatMessage[]): TurnCheckpoint[] {
+  const checkpoints: TurnCheckpoint[] = [];
+  let state = initialState;
+
+  for (let i = 0; i < history.length; i += 1) {
+    const msg = history[i];
+    if (msg.role !== "assistant" || !msg.parsed) continue;
+
+    const userInput = history[i - 1]?.role === "user" ? history[i - 1].content : "（继续推进当前故事。）";
+    const historyBefore = history.slice(0, history[i - 1]?.role === "user" ? i - 1 : i);
+    checkpoints.push({
+      state,
+      history: historyBefore,
+      summary: emptySummary,
+      userInput,
+    });
+
+    const advancedState: WorldState = {
+      ...state,
+      date: pushDate(state.date, msg.parsed.timeAdvance),
+      flow: msg.parsed.pace === "scene" ? "chain" : "weekly",
+    };
+    state = applyTurn(advancedState, msg.parsed);
+  }
+
+  return checkpoints;
 }
