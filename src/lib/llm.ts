@@ -204,13 +204,13 @@ type MockTurn = Partial<StoryTurn> & Pick<StoryTurn, "eventTitle" | "narration">
 // ---- 第一人称叙述：阿虚 POV ----
 const kyonScenes = {
   firstEntrance: (): MockTurn => ({
-    eventTitle: "入学日的红丝带",
+    eventTitle: "入学日的黄丝带",
     scene: "一年五班教室",
     time: "上午第一节课前",
     mood: "尴尬中带着好奇",
     narration:
       "我把书包扔到窗边倒数第二排——这是黑板座位表分给我的位置。" +
-      "刚坐下，背后传来桌椅挪动的声响。我没必要回头，余光也能看到一抹红——一个扎红丝带的女生在我后面落座。" +
+      "刚坐下，背后传来桌椅挪动的声响。我没必要回头，余光也能看到一抹明亮的黄——一个扎黄丝带的女生在我后面落座。" +
       "她眉头微蹙，连'初次见面'该有的那点客套都嫌麻烦。这种气场，我大概一辈子也学不会。",
     dialogue: [{ speaker: "凉宫春日", mood: "敷衍", text: "……早。" }],
     stateChanges: {
