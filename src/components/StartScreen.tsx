@@ -1,10 +1,9 @@
 import { useState } from "react";
 import type { CharacterCardV2 } from "@/types/character";
 import type { IdentityLevel } from "@/types/lorebook";
-import { generateRandomCharacter } from "@/lib/randomMode";
+import { generateMinimalCard, type RandomCharacterSeed } from "@/lib/randomMode";
 import { mbtiQuiz } from "@/data/mbtiQuiz";
 import { matchArchetype, type MatchResult } from "@/lib/personalityMatcher";
-import { archetypeInfo } from "@/data/characterArchetypes";
 import { SettingsModal } from "./SettingsModal";
 import { loadSettings } from "@/lib/settings";
 import { MBTIQuiz } from "./MBTIQuiz";
@@ -12,7 +11,11 @@ import { ArchetypeReveal } from "./ArchetypeReveal";
 import { ThinkingTimer } from "./ThinkingTimer";
 
 type Props = {
-  onStart: (opts: { card: CharacterCardV2; identity: IdentityLevel }) => void;
+  onStart: (opts: {
+    card: CharacterCardV2;
+    identity: IdentityLevel;
+    expandSeed: RandomCharacterSeed;
+  }) => void;
 };
 
 type Stage = "intro" | "quiz" | "reveal" | "generating" | "error";
@@ -29,20 +32,20 @@ export function StartScreen({ onStart }: Props) {
     setStage("reveal");
   }
 
-  async function onSupplementConfirm(supplement: string, name: string) {
+  async function onSupplementConfirm(supplement: string, name: string, identity: IdentityLevel) {
     if (!match) return;
     setStage("generating");
     setErr(null);
     try {
-      const card = await generateRandomCharacter({
+      const seed: RandomCharacterSeed = {
         name: name || undefined,
         match,
         supplement: supplement || undefined,
-      });
-      const identity =
-        (card.data.extensions?.default_identity as IdentityLevel | undefined) ??
-        archetypeInfo[match.archetype].defaultIdentity;
-      onStart({ card, identity });
+        identity,
+      };
+      // 阶段 ①：只生成最小卡，目标 ≤10s。完整 description 会在玩家进游戏后由 StoryView 后台扩展。
+      const card = await generateMinimalCard(seed);
+      onStart({ card, identity, expandSeed: seed });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       setStage("error");
@@ -107,7 +110,7 @@ export function StartScreen({ onStart }: Props) {
           <h2>正在为你打造原创角色卡……</h2>
           <p className="muted">
             AI 正在结合你的人格原型与补充信息，生成一张独一无二的 V2 角色卡。
-            根据网络情况，这可能需要 10-40 秒。
+            通常 5-15 秒。完整人物档案会在你进入游戏后悄悄补全。
           </p>
           <div className="loading-dots"><span /><span /><span /></div>
           <div className="loading-timer">

@@ -6,6 +6,7 @@ import type { WorldState } from "@/types/worldState";
 import type { ChatMessage, StoryTurn } from "@/types/turn";
 
 import { runLLMBatch } from "@/lib/llm";
+import { expandCardDescription, type RandomCharacterSeed } from "@/lib/randomMode";
 import { applyTurn } from "@/lib/worldState";
 import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
@@ -42,6 +43,10 @@ type Props = {
   customCard?: CharacterCardV2;
   resumeFrom?: SaveBlob | null;
   onReset: () => void;
+  /** 仅随机模式新开局时存在；驱动后台 description 扩展 */
+  expandSeed?: RandomCharacterSeed;
+  /** 后台扩展完成后的回调，用来把扩展后的 card 写回 App state */
+  onCardUpdate?: (card: CharacterCardV2) => void;
 };
 
 type TurnCheckpoint = {
@@ -54,7 +59,7 @@ type TurnCheckpoint = {
 /** 队列长度上限——只要 < 这个值就持续 prefetch，让缓冲始终饱满 */
 const MAX_QUEUE = 8;
 
-export function StoryView({ card, lorebook, initialState, characterId, customCard, resumeFrom, onReset }: Props) {
+export function StoryView({ card, lorebook, initialState, characterId, customCard, resumeFrom, onReset, expandSeed, onCardUpdate }: Props) {
   const [state, setState] = useState<WorldState>(resumeFrom?.state ?? initialState);
   const [history, setHistory] = useState<ChatMessage[]>(resumeFrom?.history ?? []);
   const [summary, setSummary] = useState<SummaryState>(resumeFrom?.summary ?? emptySummary);
@@ -81,6 +86,8 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   const [endingErr, setEndingErr] = useState<string | null>(null);
 
   const initRef = useRef(false);
+  /** 后台扩展 description 的触发标记——本会话只跑一次，无论成败 */
+  const expandTriggeredRef = useRef(false);
 
   // 第一轮：自动用"故事开场"信号触发一次推进（仅在不是 resume 时）
   useEffect(() => {
@@ -92,6 +99,34 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * 后台扩展 description——两段式生成的第二阶段。
+   * 触发条件：随机模式新开局 + card 还是 stub + 首批剧情已落地 + 玩家不在思考态。
+   * 延迟 5 秒启动，让玩家先开始阅读首批；这次调用与故事预取串行（让 prefetchingRef 接管时机）。
+   */
+  useEffect(() => {
+    if (expandTriggeredRef.current) return;
+    if (!expandSeed) return;
+    if (!card.data.extensions?.description_pending_expand) return;
+    if (turns.length === 0) return;
+    if (showThinking) return;
+
+    expandTriggeredRef.current = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const updated = await expandCardDescription(card, expandSeed);
+        if (updated.data.description !== card.data.description && onCardUpdate) {
+          console.log("[expandCardDescription] 完整 XML 已写回 card.description（", updated.data.description.length, "字符）");
+          onCardUpdate(updated);
+        }
+      } catch (e) {
+        console.warn("[expandCardDescription] 后台扩展失败，保留最小卡：", e);
+      }
+    }, 5000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length, showThinking]);
 
   /**
    * 玩家在思考态等待时，如果后台 prefetch 回来了——自动消费一段并关闭 thinking。

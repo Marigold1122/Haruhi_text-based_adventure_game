@@ -6,11 +6,16 @@ import {
   type ArchetypeInfo,
 } from "@/data/characterArchetypes";
 import type { MatchResult } from "@/lib/personalityMatcher";
+import { identityGuides } from "@/data/identityGuide";
+import type { IdentityLevel } from "@/types/lorebook";
 
 type Props = {
   match: MatchResult;
-  onConfirm: (supplement: string, name: string) => void;
+  onConfirm: (supplement: string, name: string, identity: IdentityLevel) => void;
 };
+
+const IDENTITY_ORDER: IdentityLevel[] = ["passerby", "fringe", "core", "anomaly", "observer"];
+const RECOMMENDED_IDENTITY: IdentityLevel = "passerby";
 
 /**
  * 测试结束后的"匹配人格 + 立绘 + 补充输入"组合界面。
@@ -32,10 +37,11 @@ export function ArchetypeReveal({ match, onConfirm }: Props) {
   const [fadingOut, setFadingOut] = useState(false);
   const [supplement, setSupplement] = useState("");
   const [name, setName] = useState("");
+  const [identity, setIdentity] = useState<IdentityLevel>(RECOMMENDED_IDENTITY);
 
   function handleStart() {
     setFadingOut(true);
-    setTimeout(() => onConfirm(supplement.trim(), name.trim()), 480);
+    setTimeout(() => onConfirm(supplement.trim(), name.trim(), identity), 480);
   }
 
   return (
@@ -111,6 +117,45 @@ export function ArchetypeReveal({ match, onConfirm }: Props) {
                 placeholder="例如：佐藤悠 / 樱井遥"
               />
             </label>
+
+            <div className="form-row">
+              <span>开局身份（推荐选「路人学生」体验完整剧情走向）</span>
+              <div className="identity-grid">
+                {IDENTITY_ORDER.map((id) => {
+                  const g = identityGuides[id];
+                  const active = identity === id;
+                  const recommended = id === RECOMMENDED_IDENTITY;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`identity-card ${active ? "active" : ""}`}
+                      onClick={() => setIdentity(id)}
+                    >
+                      <div className="identity-name">
+                        {g.label}
+                        {recommended && (
+                          <span
+                            style={{
+                              marginLeft: 8,
+                              fontSize: 11,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              background: "var(--accent)",
+                              color: "#fff",
+                              verticalAlign: "middle",
+                            }}
+                          >
+                            推荐
+                          </span>
+                        )}
+                      </div>
+                      <p className="identity-desc">{g.shortDesc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <label className="form-row">
               <span>补充信息</span>
