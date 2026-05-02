@@ -24,6 +24,13 @@ export type StateChanges = {
   identityShift?: import("./lorebook").IdentityLevel;
 };
 
+export type TimeAdvance = {
+  days?: number;
+  hours?: number;
+  minutes?: number;
+  note?: string;       // 中文展示串：例如 "次日早晨" / "傍晚回到部室" / "一周后" / "约半小时后"
+};
+
 export type StoryTurn = {
   eventTitle: string;
   scene: string;
@@ -32,14 +39,22 @@ export type StoryTurn = {
   narration: string;          // 旁白
   dialogue: DialogueLine[];   // 对白
   stateChanges: StateChanges;
-  choices: string[];          // 2-4 个固定选项；玩家也可走自定义输入
+
+  // 节奏字段（1.0 之后的核心改造）
+  pace: "summary" | "scene";       // summary = 一段文字概括 1-2 天；scene = 聚焦具体场景，紧贴剧情真实时间
+  timeAdvance: TimeAdvance;        // 本轮叙述结束后时间向前推多少
+  requiresChoice: boolean;         // 本轮结束时是否需要玩家做选择
+  choices: string[];               // 仅在 requiresChoice 为 true 时有意义；2-4 个完整行动短句
+
+  // 节拍机制：本轮叙述是否完成了当前 outline.beat（如 true，下一轮自动推进到下一节拍）
+  beatComplete: boolean;
 
   // 事件链相关（可选）
   chain?: {
     id: string;
     step: number;
     totalSteps: number;
-    endMarker?: string;       // AI 在最后一节标记结束
+    endMarker?: string;
   };
 };
 

@@ -1,5 +1,6 @@
 import type { WorldState } from "@/types/worldState";
 import type { SummaryState } from "@/lib/summary";
+import { findOutline } from "@/data/storyOutlines";
 
 type Props = {
   state: WorldState;
@@ -20,8 +21,22 @@ export function StatusPanel({ state, characterName, trace, summaryStatus }: Prop
       <section>
         <h4>时间</h4>
         <p>{state.date.display}</p>
-        <p className="muted">流速：{flowLabel(state.flow)}</p>
+        <p className="muted">节奏：{flowLabel(state.flow)}</p>
       </section>
+
+      {(() => {
+        const outline = findOutline(state.startingPoint);
+        if (!outline) return null;
+        const idx = Math.min(state.currentBeatIndex, outline.beats.length - 1);
+        const cur = outline.beats[idx];
+        return (
+          <section>
+            <h4>剧情进度</h4>
+            <p className="big" style={{ fontSize: 14 }}>{cur.title}</p>
+            <p className="muted">第 {idx + 1} / {outline.beats.length} 节拍 · {cur.pace === "summary" ? "概括" : "实时"}</p>
+          </section>
+        );
+      })()}
 
       <section>
         <h4>关系</h4>

@@ -96,12 +96,31 @@ export function selectLoreEntries(opts: {
 // 3) Author's Note 模板填充
 // ------------------------------------------------------------------
 
+export type BeatContext = {
+  arc: string;
+  currentIndex: number;
+  total: number;
+  current: {
+    title: string;
+    summary: string;
+    pace: "summary" | "scene";
+    requiresChoice: boolean;
+    choiceHint?: string;
+    expectedSpan?: string;
+  };
+  next?: {
+    title: string;
+    summary: string;
+  };
+};
+
 export function renderAuthorsNote(opts: {
   preset: Preset;
   state: WorldState;
   sceneCast?: string;
+  beat?: BeatContext;
 }): string {
-  const { preset, state, sceneCast } = opts;
+  const { preset, state, sceneCast, beat } = opts;
 
   const worldStateBlock = [
     `· 春日满足度（隐藏）：${state.haruhiSatisfaction}`,
@@ -119,6 +138,7 @@ export function renderAuthorsNote(opts: {
     : "· 不在事件链中";
 
   const sceneCastBlock = sceneCast ?? "（未配置 sceneCast）";
+  const beatBlock = renderBeatBlock(beat);
 
   return preset.authors_note_template
     .replace(/\{\{date\}\}/g, state.date.display)
@@ -126,7 +146,37 @@ export function renderAuthorsNote(opts: {
     .replace(/\{\{identity\}\}/g, identityLabel(state.identity))
     .replace(/\{\{world_state\}\}/g, worldStateBlock)
     .replace(/\{\{chain\}\}/g, chainBlock)
-    .replace(/\{\{scene_cast\}\}/g, sceneCastBlock);
+    .replace(/\{\{scene_cast\}\}/g, sceneCastBlock)
+    .replace(/\{\{beat\}\}/g, beatBlock);
+}
+
+function renderBeatBlock(beat?: BeatContext): string {
+  if (!beat) return "（未配置 outline——LLM 自由发挥日常）";
+  const lines: string[] = [];
+  lines.push(`【主线方向】${beat.arc}`);
+  lines.push("");
+  lines.push(`【当前节拍 ${beat.currentIndex + 1}/${beat.total}：${beat.current.title}】`);
+  lines.push(`节奏：${beat.current.pace === "summary" ? "summary（概括跨多日）" : "scene（实时场景）"}`);
+  if (beat.current.expectedSpan) lines.push(`预计跨度：${beat.current.expectedSpan}`);
+  lines.push(`需要玩家选择：${beat.current.requiresChoice ? "是（本节拍最后一轮 requiresChoice=true，给 2-4 个选项）" : "否（本节拍全部 requiresChoice=false，玩家无介入权限）"}`);
+  if (beat.current.requiresChoice && beat.current.choiceHint) {
+    lines.push(`选项围绕：${beat.current.choiceHint}`);
+  }
+  lines.push("");
+  lines.push(`【本节拍要演的内容】`);
+  lines.push(beat.current.summary);
+  if (beat.next) {
+    lines.push("");
+    lines.push(`【下一节拍预告（仅参考，不要在本轮越界进入）】`);
+    lines.push(`${beat.next.title} —— ${beat.next.summary.split("\n")[0]}`);
+  }
+  lines.push("");
+  lines.push("【节拍推进规则】");
+  lines.push("- 本节拍可能需要 1~多 轮叙述完成（特别是 scene）。");
+  lines.push("- 当本轮叙述把当前节拍演完时，输出 beatComplete=true，下一轮自动进入下一节拍。");
+  lines.push("- 当前节拍未完成时输出 beatComplete=false，下一轮继续推进当前节拍。");
+  lines.push("- 不要跳节拍——必须按顺序进入下一个。");
+  return lines.join("\n");
 }
 
 function flowLabel(flow: WorldState["flow"]): string {
@@ -171,8 +221,9 @@ export function assemblePrompt(opts: {
   summary?: string | null;       // 滚动摘要（可选）
   userInput: string;             // 本轮玩家行动 / 推进信号
   sceneCast?: string;            // 本轮场景人员清单（高优先级注入）
+  beat?: BeatContext;            // 当前剧情大纲节拍（最高优先级注入）
 }): AssembledPrompt {
-  const { card, lorebook, preset, state, history, summary, userInput, sceneCast } = opts;
+  const { card, lorebook, preset, state, history, summary, userInput, sceneCast, beat } = opts;
   const cardData = card.data;
 
   // 取最近 N 轮文本作为关键词扫描素材（含本轮输入）
@@ -185,7 +236,7 @@ export function assemblePrompt(opts: {
   const loreBefore = lore.filter((e) => e.position !== "after_char");
   const loreAfter = lore.filter((e) => e.position === "after_char" || e.position === undefined);
 
-  const authorsNote = renderAuthorsNote({ preset, state, sceneCast });
+  const authorsNote = renderAuthorsNote({ preset, state, sceneCast, beat });
 
   // ===== ① + ② + ③(before_char) + ④ 合并到一条 system 消息 =====
   // 这是酒馆默认行为：char 描述与世界书 before_char 部分都属于"角色之前"的固定上下文。

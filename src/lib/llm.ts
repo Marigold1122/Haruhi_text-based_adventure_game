@@ -75,6 +75,32 @@ export function parseEventJson(text: string): StoryTurn | null {
   if (typeof o.narration !== "string") return null;
   if (!Array.isArray(o.choices)) return null;
 
+  // pace / timeAdvance / requiresChoice 的兜底默认值——若 LLM 没填，按"日常 summary"处理
+  const pace: StoryTurn["pace"] = o.pace === "scene" ? "scene" : "summary";
+  const ta = (o.timeAdvance ?? {}) as Partial<StoryTurn["timeAdvance"]>;
+  const timeAdvance: StoryTurn["timeAdvance"] = {
+    days: typeof ta.days === "number" ? ta.days : undefined,
+    hours: typeof ta.hours === "number" ? ta.hours : undefined,
+    minutes: typeof ta.minutes === "number" ? ta.minutes : undefined,
+    note: typeof ta.note === "string" ? ta.note : undefined,
+  };
+  // 若 LLM 完全没给时间推进——summary 默认 1 天；scene 默认 30 分钟
+  if (
+    timeAdvance.days === undefined &&
+    timeAdvance.hours === undefined &&
+    timeAdvance.minutes === undefined
+  ) {
+    if (pace === "summary") timeAdvance.days = 1;
+    else timeAdvance.minutes = 30;
+  }
+  const requiresChoice =
+    typeof o.requiresChoice === "boolean" ? o.requiresChoice : false;
+  const rawChoices = (o.choices as string[]) ?? [];
+  const choices = requiresChoice
+    ? rawChoices.filter((c) => typeof c === "string").slice(0, 4)
+    : [];
+  const beatComplete = typeof o.beatComplete === "boolean" ? o.beatComplete : false;
+
   return {
     eventTitle: o.eventTitle,
     scene: typeof o.scene === "string" ? o.scene : "",
@@ -83,7 +109,11 @@ export function parseEventJson(text: string): StoryTurn | null {
     narration: o.narration,
     dialogue: Array.isArray(o.dialogue) ? (o.dialogue as StoryTurn["dialogue"]) : [],
     stateChanges: (o.stateChanges as StoryTurn["stateChanges"]) ?? {},
-    choices: (o.choices as string[]).filter((c) => typeof c === "string").slice(0, 4),
+    pace,
+    timeAdvance,
+    requiresChoice,
+    choices,
+    beatComplete,
     chain: o.chain as StoryTurn["chain"],
   };
 }
@@ -105,7 +135,11 @@ export function fallbackTurn(reason = "AI 输出无法解析", raw?: string): St
     narration: `（${reason}。空气里出现一道短暂的停顿，世界正在重新对焦。）${preview}`,
     dialogue: [],
     stateChanges: {},
+    pace: "scene",
+    timeAdvance: {},
+    requiresChoice: true,
     choices: ["重试本轮", "尝试主动开口", "检查 LLM 设置"],
+    beatComplete: false,
   };
 }
 
@@ -150,13 +184,30 @@ export const mockLLM: LLMCall = async (messages) => {
   return wrap(dailyTurn(pov, lastUser));
 };
 
-function wrap(turn: StoryTurn): string {
-  return `<event_json>\n${JSON.stringify(turn, null, 2)}\n</event_json>`;
+function wrap(turn: Partial<StoryTurn> & Pick<StoryTurn, "eventTitle" | "narration">): string {
+  // mock factory 写起来更简洁——pace/timeAdvance/requiresChoice 在这里补默认值
+  const filled: StoryTurn = {
+    scene: "",
+    time: "",
+    mood: "",
+    dialogue: [],
+    stateChanges: {},
+    choices: [],
+    pace: "summary",
+    timeAdvance: { days: 1 },
+    requiresChoice: false,
+    beatComplete: false,
+    ...turn,
+  } as StoryTurn;
+  return `<event_json>\n${JSON.stringify(filled, null, 2)}\n</event_json>`;
 }
+
+// 简化 mock factory 类型——只要必填字段，pace/timeAdvance/requiresChoice/dialogue/stateChanges 由 wrap 兜底
+type MockTurn = Partial<StoryTurn> & Pick<StoryTurn, "eventTitle" | "narration">;
 
 // ---- 第一人称叙述：阿虚 POV ----
 const kyonScenes = {
-  firstEntrance: (): StoryTurn => ({
+  firstEntrance: (): MockTurn => ({
     eventTitle: "入学日的红丝带",
     scene: "一年五班教室",
     time: "上午第一节课前",
@@ -177,7 +228,7 @@ const kyonScenes = {
       "试探性地问她叫什么名字",
     ],
   }),
-  firstSosFounded: (): StoryTurn => ({
+  firstSosFounded: (): MockTurn => ({
     eventTitle: "部室里那台温热的电脑",
     scene: "文艺部部室",
     time: "放学后",
@@ -202,7 +253,7 @@ const kyonScenes = {
       "假装没听见，给朝比奈打掩护",
     ],
   }),
-  daily: (userInput: string): StoryTurn => ({
+  daily: (userInput: string): MockTurn => ({
     eventTitle: "放学后的走廊",
     scene: "教学楼走廊",
     time: "放学后",
@@ -215,7 +266,7 @@ const kyonScenes = {
     stateChanges: { playerStressDelta: -2 },
     choices: ["答应去部室", "找借口先回家", "反问谷口为什么这么关心"],
   }),
-  anomalyHint: (userInput: string): StoryTurn => ({
+  anomalyHint: (userInput: string): MockTurn => ({
     eventTitle: "旧电脑的异常启动",
     scene: "文艺部部室",
     time: "放学后",
@@ -236,7 +287,7 @@ const kyonScenes = {
     },
     choices: ["凑近屏幕看显示了什么", "让长门检查电脑日志", "让春日先冷静下来"],
   }),
-  supernatural: (userInput: string): StoryTurn => ({
+  supernatural: (userInput: string): MockTurn => ({
     eventTitle: "灰色街道的呼吸",
     scene: "闭锁空间",
     time: "—",
@@ -254,7 +305,7 @@ const kyonScenes = {
 
 // ---- 第一人称叙述：凉宫春日 POV ----
 const haruhiScenes = {
-  firstEntrance: (): StoryTurn => ({
+  firstEntrance: (): MockTurn => ({
     eventTitle: "我的开场宣言",
     scene: "一年五班教室",
     time: "上午第一节课前",
@@ -278,7 +329,7 @@ const haruhiScenes = {
       "扫视教室，挑出有趣的人选",
     ],
   }),
-  firstSosFounded: (): StoryTurn => ({
+  firstSosFounded: (): MockTurn => ({
     eventTitle: "我的部室，我的电脑",
     scene: "文艺部部室",
     time: "放学后",
@@ -304,7 +355,7 @@ const haruhiScenes = {
       "盯着长门看——她总有点不一样",
     ],
   }),
-  daily: (userInput: string): StoryTurn => ({
+  daily: (userInput: string): MockTurn => ({
     eventTitle: "我对放学后的判决",
     scene: "教学楼走廊",
     time: "放学后",
@@ -321,7 +372,7 @@ const haruhiScenes = {
       "宣布周末搞一次大行动",
     ],
   }),
-  anomalyHint: (userInput: string): StoryTurn => ({
+  anomalyHint: (userInput: string): MockTurn => ({
     eventTitle: "我就说今天会有事！",
     scene: "文艺部部室",
     time: "放学后",
@@ -347,7 +398,7 @@ const haruhiScenes = {
       "拍桌子宣布'调查开始'",
     ],
   }),
-  supernatural: (userInput: string): StoryTurn => ({
+  supernatural: (userInput: string): MockTurn => ({
     eventTitle: "这片灰色的世界",
     scene: "看起来像是城里某条街，但是颜色不对",
     time: "—",
@@ -374,21 +425,21 @@ const haruhiScenes = {
   }),
 };
 
-function firstSceneTurn(pov: Pov, sysTail: string): StoryTurn {
+function firstSceneTurn(pov: Pov, sysTail: string): MockTurn {
   const inSosFounded = /SOS 团创立周/.test(sysTail);
   const set = pov === "haruhi" ? haruhiScenes : kyonScenes;
   return inSosFounded ? set.firstSosFounded() : set.firstEntrance();
 }
 
-function dailyTurn(pov: Pov, userInput: string): StoryTurn {
+function dailyTurn(pov: Pov, userInput: string): MockTurn {
   return (pov === "haruhi" ? haruhiScenes : kyonScenes).daily(userInput);
 }
 
-function anomalyHintTurn(pov: Pov, userInput: string): StoryTurn {
+function anomalyHintTurn(pov: Pov, userInput: string): MockTurn {
   return (pov === "haruhi" ? haruhiScenes : kyonScenes).anomalyHint(userInput);
 }
 
-function supernaturalTurn(pov: Pov, userInput: string): StoryTurn {
+function supernaturalTurn(pov: Pov, userInput: string): MockTurn {
   return (pov === "haruhi" ? haruhiScenes : kyonScenes).supernatural(userInput);
 }
 

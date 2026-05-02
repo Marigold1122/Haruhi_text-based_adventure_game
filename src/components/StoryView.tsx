@@ -8,10 +8,12 @@ import type { ChatMessage, StoryTurn } from "@/types/turn";
 import { assemblePrompt, pickPreset } from "@/lib/promptRouter";
 import { runLLM } from "@/lib/llm";
 import { applyTurn } from "@/lib/worldState";
-import { advanceDate, pickFlow, flowChangeFlavor } from "@/lib/timeAdvance";
+import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
 import { type SummaryState, emptySummary, maybeUpdateSummary, tailHistory } from "@/lib/summary";
 import { startingPointById } from "@/data/startingPoints";
+import { findOutline } from "@/data/storyOutlines";
+import type { BeatContext } from "@/lib/promptRouter";
 import { rollEnding, generateEndingNarrative, type EndingTrigger } from "@/lib/ending";
 import { save, load, clear, type SaveBlob } from "@/lib/storage";
 import { loadSettings } from "@/lib/settings";
@@ -43,7 +45,6 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [trace, setTrace] = useState<{ presetName: string; activeLoreEntries: string[] } | null>(null);
-  const [flowFlavor, setFlowFlavor] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [ending, setEnding] = useState<EndingTrigger | null>(null);
   const [endingText, setEndingText] = useState<string | null>(null);
@@ -61,7 +62,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const lastChoices = useMemo(() => turns[turns.length - 1]?.choices ?? [], [turns]);
+  const lastTurn = useMemo(() => turns[turns.length - 1], [turns]);
 
   async function advance(userInput: string) {
     setLoading(true);
@@ -69,17 +70,8 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const decision = decideEvent(state);
     const preset = pickPreset({ eventKind: decision.eventKind, state });
 
+    // 时间推进现在完全由 LLM 上一轮的 timeAdvance 决定——这一轮调用前不再预先推进
     let next = state;
-    if (userInput !== "__story_open__") {
-      const nextFlow = pickFlow(state);
-      const flavor = flowChangeFlavor(state.flow, nextFlow);
-      if (flavor) setFlowFlavor(flavor);
-      next = {
-        ...state,
-        flow: nextFlow,
-        date: nextFlow === "chain" ? state.date : advanceDate(state.date, nextFlow),
-      };
-    }
 
     if (!next.activeChain && decision.proposedChain) {
       next = {
@@ -102,6 +94,31 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
 
     const sceneCast = startingPointById[next.startingPoint]?.sceneCast;
 
+    // 当前节拍上下文（按 currentBeatIndex 切片）
+    const outline = findOutline(next.startingPoint);
+    let beat: BeatContext | undefined;
+    if (outline) {
+      const idx = Math.min(next.currentBeatIndex, outline.beats.length - 1);
+      const cur = outline.beats[idx];
+      const nxt = outline.beats[idx + 1];
+      beat = {
+        arc: outline.arc,
+        currentIndex: idx,
+        total: outline.beats.length,
+        current: {
+          title: cur.title,
+          summary: cur.summary,
+          pace: cur.pace,
+          requiresChoice: cur.requiresChoice,
+          choiceHint: cur.choiceHint,
+          expectedSpan: cur.expectedSpan,
+        },
+        next: nxt
+          ? { title: nxt.title, summary: nxt.summary }
+          : undefined,
+      };
+    }
+
     const assembled = assemblePrompt({
       card,
       lorebook,
@@ -111,6 +128,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       summary: summary.text,
       userInput: promptUser,
       sceneCast,
+      beat,
     });
     setTrace({ presetName: assembled.trace.presetName, activeLoreEntries: assembled.trace.activeLoreEntries });
 
@@ -119,7 +137,18 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const userMsg: ChatMessage = { role: "user", content: promptUser };
     const aiMsg: ChatMessage = { role: "assistant", content: raw, parsed: turn };
     const nextHistory = [...history, userMsg, aiMsg];
-    const finalState = applyTurn(next, turn);
+
+    // 时间推进 + 节拍推进
+    const advancedState: WorldState = {
+      ...next,
+      date: pushDate(next.date, turn.timeAdvance),
+      flow: turn.pace === "scene" ? "chain" : "weekly",
+      // beatComplete=true 时推进到下一节拍（不超过最后一节）
+      currentBeatIndex: turn.beatComplete && outline
+        ? Math.min(next.currentBeatIndex + 1, outline.beats.length - 1)
+        : next.currentBeatIndex,
+    };
+    const finalState = applyTurn(advancedState, turn);
 
     // 异步更新 Rolling Summary（不阻塞 UI）
     maybeUpdateSummary({ history: nextHistory, prev: summary }).then(setSummary);
@@ -162,10 +191,10 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     void advance(text);
   }
 
-  function onAdvanceClick() {
+  function onContinue() {
     if (loading) return;
-    setPending("（继续观察周围……）");
-    void advance("我什么也不做，继续观察周围。");
+    setPending(null);
+    void advance("（继续推进。请按当前节奏自然延续故事——日常段落用 summary 跳过 1-2 天，关键节点用 scene。）");
   }
 
   function doSave() {
@@ -211,12 +240,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       />
 
       <div className="story-body">
-        <main className="story-main" onClick={onAdvanceClick} role="button" tabIndex={0}>
-          {flowFlavor && (
-            <div className="flow-flavor" onClick={(e) => { e.stopPropagation(); setFlowFlavor(null); }}>
-              {flowFlavor}
-            </div>
-          )}
+        <main className="story-main">
           <MessageStream turns={turns} pendingUserAction={pending} loading={loading} />
         </main>
 
@@ -224,7 +248,13 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       </div>
 
       <footer className="story-footer">
-        <ChoicePanel choices={lastChoices} disabled={loading} onChoose={onChoose} />
+        <ChoicePanel
+          choices={lastTurn?.choices ?? []}
+          requiresChoice={lastTurn?.requiresChoice ?? false}
+          disabled={loading}
+          onChoose={onChoose}
+          onContinue={onContinue}
+        />
       </footer>
 
       {showSettings && (
