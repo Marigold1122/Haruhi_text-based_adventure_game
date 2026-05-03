@@ -1,17 +1,20 @@
 :root {
-  --bg: #f5f1e8;
-  --bg-2: #ece5d3;
-  --panel: rgba(255, 255, 255, 0.86);
-  --panel-2: rgba(255, 255, 255, 0.6);
-  --text: #20242c;
-  --muted: #6b7280;
-  --line: rgba(32, 36, 44, 0.12);
-  --line-strong: rgba(32, 36, 44, 0.32);
-  --accent: #d33b32;
-  --accent-2: #f2c94c;
-  --school-blue: #3d6fb6;
-  --anomaly: #7c5cff;
-  --shadow: 0 4px 24px rgba(32, 36, 44, 0.08);
+  --bg: #f5e6f0;
+  --bg-2: #e8d5e8;
+  --panel: rgba(255, 255, 255, 0.74);
+  --panel-2: rgba(255, 255, 255, 0.54);
+  --text: #2d1b2e;
+  --muted: #7d6b7e;
+  --line: rgba(197, 91, 138, 0.12);
+  --line-strong: rgba(197, 91, 138, 0.28);
+  --accent: #c75b8a;
+  --accent-2: #a78bca;
+  --school-blue: #5a8fc4;
+  --anomaly: #9b7fd4;
+  --sakura-pink: #ffc0d3;
+  --sakura-light: #ffe5f0;
+  --shadow: 0 8px 32px rgba(197, 91, 138, 0.12);
+  --shadow-strong: 0 12px 48px rgba(197, 91, 138, 0.18);
 }
 
 * {
@@ -24,11 +27,48 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.7;
+}
+
+html {
+  background: var(--bg);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* 背景图层 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: url('/yuki-bg.jpg') center/cover no-repeat fixed;
+  filter: brightness(1.04) contrast(1.04);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(246, 248, 252, 0.12) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+body {
+  background: transparent;
 }
 
 button {
@@ -39,11 +79,29 @@ button {
   color: var(--text);
   padding: 8px 14px;
   border-radius: 8px;
-  transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+  position: relative;
+  overflow: hidden;
+  transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 192, 211, 0.3) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 280ms;
+}
+button:hover::before {
+  opacity: 1;
 }
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: var(--accent);
+  box-shadow: 0 6px 20px rgba(197, 91, 138, 0.25);
 }
 button:disabled {
   opacity: 0.55;
@@ -203,17 +261,19 @@ textarea {
   margin-top: 6px;
 }
 .start-button {
-  background: var(--accent);
+  background: linear-gradient(135deg, #c75b8a 0%, #a78bca 100%);
   color: #fff;
-  border-color: var(--accent);
+  border: none;
   font-size: 15px;
   font-weight: 600;
   padding: 12px 28px;
   border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(197, 91, 138, 0.3);
 }
 .start-button:hover:not(:disabled) {
-  background: #b9322a;
-  border-color: #b9322a;
+  background: linear-gradient(135deg, #b54a79 0%, #9670b8 100%);
+  border: none;
+  box-shadow: 0 8px 24px rgba(197, 91, 138, 0.4);
 }
 .start-note {
   color: var(--muted);
@@ -233,9 +293,9 @@ textarea {
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(197, 91, 138, 0.15);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px) saturate(180%);
 }
 .top-title {
   margin: 0;
@@ -288,7 +348,8 @@ textarea {
 /* 状态侧栏 */
 .status-panel {
   border-left: 1px solid var(--line);
-  background: var(--panel-2);
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px) saturate(180%);
   padding: 22px 18px;
   overflow-y: auto;
 }
@@ -352,16 +413,28 @@ textarea {
   margin: 0 auto;
 }
 .turn-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(246, 235, 244, 0.78), rgba(232, 218, 232, 0.72));
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(236, 216, 231, 0.58);
   border-radius: 12px;
   padding: 18px 20px 16px;
   margin-bottom: 16px;
-  box-shadow: var(--shadow);
+  box-shadow:
+    0 8px 32px rgba(88, 57, 84, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.46);
   transition: opacity 200ms ease;
 }
 .turn-card.past {
-  opacity: 0.78;
+  opacity: 0.86;
+}
+.turn-card.dialogue-turn {
+  background:
+    linear-gradient(135deg, rgba(244, 232, 242, 0.8), rgba(228, 215, 230, 0.74));
+}
+.turn-card.narration-turn {
+  background:
+    linear-gradient(135deg, rgba(246, 236, 244, 0.78), rgba(235, 224, 235, 0.72));
 }
 .turn-card.current {
   animation: fadeIn 320ms ease;
@@ -404,7 +477,7 @@ textarea {
   padding: 9px 10px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  background: #fff;
+  background: rgba(250, 246, 250, 0.86);
   color: var(--text);
   line-height: 1.7;
 }
@@ -470,7 +543,7 @@ textarea {
 .speaker-mood {
   font-size: 11.5px;
   color: var(--muted);
-  background: var(--bg-2);
+  background: rgba(232, 213, 232, 0.72);
   padding: 1px 6px;
   border-radius: 999px;
 }
@@ -484,7 +557,7 @@ textarea {
   max-width: 720px;
   padding: 8px 12px;
   border-left: 3px solid var(--accent);
-  background: rgba(211, 59, 50, 0.06);
+  background: rgba(235, 218, 232, 0.72);
   font-size: 14px;
   color: var(--text);
 }
@@ -525,7 +598,8 @@ textarea {
 /* footer 选项区 */
 .story-footer {
   border-top: 1px solid var(--line);
-  background: var(--panel);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
   padding: 12px 24px 16px;
 }
 .choice-panel {
@@ -546,18 +620,20 @@ textarea {
   margin-bottom: 10px;
 }
 .continue-btn {
-  background: var(--school-blue);
+  background: linear-gradient(135deg, #5a8fc4 0%, #7ba8d4 100%);
   color: #fff;
-  border-color: var(--school-blue);
+  border: none;
   font-size: 16px;
   font-weight: 600;
   padding: 11px 28px;
   border-radius: 10px;
   letter-spacing: 1px;
+  box-shadow: 0 4px 16px rgba(90, 143, 196, 0.3);
 }
 .continue-btn:hover:not(:disabled) {
-  background: #325b95;
-  border-color: #325b95;
+  background: linear-gradient(135deg, #4a7fb0 0%, #6b98c0 100%);
+  border: none;
+  box-shadow: 0 8px 24px rgba(90, 143, 196, 0.4);
 }
 .continue-hint {
   color: var(--muted);
@@ -624,6 +700,15 @@ textarea {
 .top-right { display: flex; gap: 6px; align-items: center; }
 .start-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .start-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.start-actions .ghost-btn {
+  color: var(--text);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(197, 91, 138, 0.12);
+  backdrop-filter: blur(10px) saturate(140%);
+}
 
 /* ============ Modal ============ */
 .modal-overlay {
@@ -633,10 +718,19 @@ textarea {
   backdrop-filter: blur(2px);
 }
 .modal {
-  background: #fff; border-radius: 12px; padding: 24px;
-  width: 520px; max-width: 92vw; max-height: 90vh; overflow-y: auto;
-  box-shadow: 0 12px 48px rgba(0,0,0,0.18);
-  display: flex; flex-direction: column; gap: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  padding: 24px;
+  width: 520px;
+  max-width: 92vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 48px rgba(197, 91, 138, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .modal.settings-modal { width: min(920px, 94vw); }
 .modal h2 { margin: 0 0 4px; font-size: 18px; }
@@ -658,10 +752,17 @@ textarea {
 .modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .modal-actions .spacer { flex: 1; }
 .primary-btn {
-  background: var(--accent); color: #fff; border-color: var(--accent);
+  background: linear-gradient(135deg, #c75b8a 0%, #a78bca 100%);
+  color: #fff;
+  border: none;
   font-weight: 600;
+  box-shadow: 0 4px 16px rgba(197, 91, 138, 0.3);
 }
-.primary-btn:hover:not(:disabled) { background: #b9322a; border-color: #b9322a; }
+.primary-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b54a79 0%, #9670b8 100%);
+  border: none;
+  box-shadow: 0 8px 24px rgba(197, 91, 138, 0.4);
+}
 .test-msg { color: var(--muted); font-size: 12.5px; padding: 8px 10px; background: var(--bg-2); border-radius: 6px; }
 .st-preset-settings {
   border: 1px solid var(--line);
@@ -902,12 +1003,13 @@ textarea {
 
 /* ---- MBTI 测试屏 ---- */
 .quiz-screen {
-  max-width: 760px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 56px 28px 80px;
+  padding: 42px 32px 64px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  justify-content: center;
+  gap: 18px;
   min-height: 100vh;
   box-sizing: border-box;
 }
@@ -917,9 +1019,20 @@ textarea {
   gap: 6px;
 }
 .quiz-progress {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  padding: 4px 12px;
   font-size: 13px;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--text);
   letter-spacing: 1px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(197, 91, 138, 0.12);
+  backdrop-filter: blur(10px) saturate(140%);
 }
 .quiz-progress-bar {
   width: 100%;
@@ -936,9 +1049,12 @@ textarea {
 .quiz-card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 28px 30px 24px;
+  border-radius: 16px;
+  padding: 38px 44px 34px;
+  min-height: 460px;
   box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
 }
 .quiz-scene-tag {
   display: inline-block;
@@ -951,28 +1067,30 @@ textarea {
   margin-bottom: 12px;
 }
 .quiz-prompt {
-  font-size: 17px;
+  font-size: 20px;
   line-height: 1.7;
-  margin: 0 0 22px;
+  margin: 0 0 28px;
   font-weight: 600;
 }
 .quiz-options {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+  flex: 1;
+  justify-content: center;
 }
 .quiz-option {
   display: flex;
   align-items: flex-start;
   gap: 14px;
   text-align: left;
-  padding: 14px 16px;
+  padding: 17px 20px;
   background: #fff;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   cursor: pointer;
   transition: all 140ms ease;
-  font-size: 14.5px;
+  font-size: 15.5px;
   line-height: 1.65;
 }
 .quiz-option:hover:not(:disabled) {
@@ -995,19 +1113,23 @@ textarea {
 
 /* ---- 人格匹配 + 补充输入屏 ---- */
 .reveal-screen {
-  max-width: 720px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 56px 28px 80px;
-  min-height: 100vh;
+  padding: 14px 28px 18px;
+  height: 100vh;
+  min-height: 0;
   box-sizing: border-box;
   transition: opacity 480ms ease;
+  display: flex;
+  align-items: center;
 }
 .reveal-card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 36px 36px 32px;
+  padding: 22px 28px 24px;
   box-shadow: var(--shadow);
+  width: 100%;
 }
 .reveal-tag {
   display: inline-block;
@@ -1021,26 +1143,45 @@ textarea {
 }
 .reveal-name {
   margin: 0 0 4px;
-  font-size: 32px;
+  font-size: 34px;
   letter-spacing: 1px;
 }
 .reveal-mbti {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   font-size: 14px;
   color: var(--school-blue);
   font-weight: 600;
   letter-spacing: 2px;
 }
 .reveal-short {
-  margin: 0 0 20px;
-  font-size: 15px;
+  margin: 0;
+  font-size: 15.5px;
   font-weight: 500;
 }
+.reveal-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.92fr) minmax(420px, 1.08fr);
+  gap: 28px;
+  align-items: start;
+}
+.reveal-left,
+.reveal-right {
+  min-width: 0;
+}
+.reveal-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.reveal-right {
+  display: flex;
+  flex-direction: column;
+}
 .reveal-long {
-  background: var(--bg-2);
+  background: rgba(232, 213, 232, 0.62);
   padding: 16px 18px;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
 .reveal-long p {
   margin: 0 0 8px;
@@ -1083,20 +1224,58 @@ textarea {
 
 .supplement-section {
   border-top: 1px solid var(--line);
-  padding-top: 24px;
-  margin-top: 12px;
+  padding-top: 18px;
+  margin-top: 2px;
 }
 .supplement-section h3 {
   margin: 0 0 6px;
-  font-size: 17px;
+  font-size: 16px;
+}
+.supplement-section .muted.small {
+  margin: 0 0 6px;
+  line-height: 1.45;
 }
 .supplement-section .form-row {
-  margin-top: 12px;
+  margin-top: 8px;
+  margin-bottom: 8px;
 }
-.supplement-actions {
+.supplement-section .form-row > span {
+  font-size: 12.5px;
+}
+.supplement-section textarea {
+  height: 72px;
+  min-height: 72px;
+}
+.reveal-right .identity-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.reveal-right .identity-card {
+  padding: 10px 11px;
+  border-radius: 8px;
+  min-width: 0;
+}
+.reveal-right .identity-name {
+  font-size: 13.5px;
+}
+.reveal-right .identity-desc {
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 3px 0 0;
+}
+.reveal-actions {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.recommended-badge {
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  vertical-align: middle;
 }
 .primary-btn.big {
   font-size: 15px;
@@ -1184,7 +1363,7 @@ textarea {
 
 /* ---- 8 维参数画像（柱状图）---- */
 .reveal-stats {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 .reveal-stats h4 {
   margin: 0 0 10px;
@@ -1196,7 +1375,7 @@ textarea {
 .stats-bars {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px 14px;
+  gap: 5px 12px;
 }
 .stat-row {
   display: flex;
@@ -1231,7 +1410,7 @@ textarea {
 
 /* ---- 相似度排行 ---- */
 .reveal-ranking {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 .reveal-ranking h4 {
   margin: 0 0 10px;
@@ -1249,7 +1428,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
+  padding: 5px 10px;
   margin-bottom: 4px;
   border-radius: 6px;
   background: var(--bg-2);
@@ -1329,9 +1508,9 @@ textarea {
 /* hero 区——立绘 + 文字水平排列 */
 .reveal-hero {
   display: flex;
-  gap: 22px;
-  margin-bottom: 22px;
-  align-items: stretch;
+  gap: 18px;
+  margin-bottom: 0;
+  align-items: center;
 }
 .reveal-hero-text {
   flex: 1;
@@ -1399,7 +1578,45 @@ textarea {
   align-self: center;
 }
 
+@media (max-width: 960px) {
+  .reveal-screen {
+    display: block;
+    height: auto;
+    min-height: 100vh;
+    padding: 28px 16px 56px;
+  }
+  .reveal-layout {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+
 @media (max-width: 720px) {
+  .quiz-screen {
+    padding: 28px 16px 48px;
+    justify-content: flex-start;
+  }
+  .quiz-card {
+    min-height: 0;
+    padding: 26px 20px 22px;
+  }
+  .quiz-prompt {
+    font-size: 18px;
+  }
+  .quiz-option {
+    padding: 14px 16px;
+    font-size: 14.5px;
+  }
+  .reveal-card {
+    padding: 24px 20px;
+  }
+  .reveal-right .identity-grid {
+    grid-template-columns: 1fr;
+  }
+  .supplement-section textarea {
+    height: auto;
+    min-height: 96px;
+  }
   .reveal-hero {
     flex-direction: column;
     align-items: center;

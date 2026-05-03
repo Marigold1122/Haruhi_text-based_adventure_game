@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { StartScreen } from "@/components/StartScreen";
 import { StoryView } from "@/components/StoryView";
+import { SakuraParticles } from "@/components/SakuraParticles";
 
 import { hsuzumiyaLore } from "@/data/lorebooks/hsuzumiya_lore";
 import { startingPointById } from "@/data/startingPoints";
@@ -58,6 +59,7 @@ export default function App() {
     const blob = load();
     return (
       <>
+        <SakuraParticles />
         <StartScreen onStart={startSession} />
         {blob && !resumeFlag && blob.customCard && (
           <div className="resume-banner">
@@ -82,16 +84,19 @@ export default function App() {
   }
 
   return (
-    <StoryView
-      card={session.card}
-      lorebook={hsuzumiyaLore}
-      initialState={session.initialState}
-      characterId="__custom__"
-      customCard={session.card}
-      resumeFrom={resumeFlag ? load() : null}
-      onReset={reset}
-      expandSeed={session.expandSeed}
-      onCardUpdate={updateCard}
-    />
+    <>
+      <SakuraParticles />
+      <StoryView
+        card={session.card}
+        lorebook={hsuzumiyaLore}
+        initialState={session.initialState}
+        characterId="__custom__"
+        customCard={session.card}
+        resumeFrom={resumeFlag ? load() : null}
+        onReset={reset}
+        expandSeed={session.expandSeed}
+        onCardUpdate={updateCard}
+      />
+    </>
   );
 }

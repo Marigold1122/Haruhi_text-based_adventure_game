@@ -23,5 +23,5 @@ export function ThinkingTimer({ active }: Props) {
   }, [active]);
 
   if (!active) return null;
-  return <span className="thinking-timer">思考 {seconds} 秒</span>;
+  return <span className="thinking-timer">已经与奇妙世界沟通 {seconds} 秒...</span>;
 }
