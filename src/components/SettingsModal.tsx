@@ -68,7 +68,9 @@ export function SettingsModal({ initial, onClose }: Props) {
       };
       saveStoredSillyTavernPreset(stored);
       setStoredPreset(stored);
-      setPresetMsg(`已导入：${parsed.summary.name}。当前生成模式保持不变，preset 仅作为本地参考/编辑。`);
+      savePromptMode("sillytavern-preset-natural");
+      setPromptMode("sillytavern-preset-natural");
+      setPresetMsg(`已导入：${parsed.summary.name}。已切换到 ST 自然正文模式，preset 将接管 prompt_order。`);
     } catch (e) {
       setPresetMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`);
     }
@@ -198,11 +200,13 @@ export function SettingsModal({ initial, onClose }: Props) {
             value={promptMode}
             onChange={(e) => updatePromptMode(e.target.value as PromptMode)}
           >
+            <option value="sillytavern-preset-natural">酒馆模式：Preset 自然正文（推荐测预设）</option>
+            <option value="sillytavern-preset">酒馆模式：Preset 结构化 JSON</option>
             <option value="writer-adapter">文笔模式：参考文风单通生成（推荐）</option>
             <option value="legacy">快速模式：单通结构化生成</option>
           </select>
           <small className="hint">
-            单次生成连续轻小说正文，再由规则切成可点击小段；内置参考文风、反 AI 味检查和硬失败自动修复。
+            测试导入预设时优先用 ST 自然正文模式；项目会保留点击式阅读壳，但不再用内置文风层接管写作。
           </small>
         </label>
 
@@ -210,7 +214,7 @@ export function SettingsModal({ initial, onClose }: Props) {
           <div className="st-editor-head">
             <div>
               <strong>SillyTavern 预设设置</strong>
-              <small>导入 preset 后仅作为参考和本地编辑，不再自动接管生成。</small>
+              <small>导入 preset 后可切换到 ST 模式，由 preset 主导 prompt_order、宏、regex 和采样。</small>
             </div>
           </div>
 
@@ -230,7 +234,7 @@ export function SettingsModal({ initial, onClose }: Props) {
                 {storedPreset.summary.sourceMaxTokens ? ` · source max tokens ${storedPreset.summary.sourceMaxTokens}` : ""}
               </small>
             ) : (
-              <small className="hint">未导入 preset。选择 JSON 后会显示条目设置，但生成仍使用项目短句协议。</small>
+              <small className="hint">未导入 preset。选择 JSON 后会显示条目设置，并自动切换到 ST 自然正文模式。</small>
             )}
           </label>
 

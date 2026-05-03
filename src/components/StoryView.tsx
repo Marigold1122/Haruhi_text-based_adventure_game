@@ -356,15 +356,21 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     } else if (built.trace.outputMode === "natural") {
       try {
         const rawNatural = await runLLMText({ messages: built.messages, sampling: built.sampling });
-        const outputRegex = applySillyTavernRegexScripts(
-          rawNatural,
-          promptRuntime.preset?.extensions?.regex_scripts,
-          SILLYTAVERN_REGEX_PLACEMENT.AI_OUTPUT,
-          { depth: 0 },
-        );
+        const useStPresetRuntime = isSillyTavernMode(built.trace.mode) && Boolean(promptRuntime.preset);
+        const outputRegex = useStPresetRuntime
+          ? applySillyTavernRegexScripts(
+            rawNatural,
+            promptRuntime.preset?.extensions?.regex_scripts,
+            SILLYTAVERN_REGEX_PLACEMENT.AI_OUTPUT,
+            { depth: 0 },
+          )
+          : { text: rawNatural, applied: [], warnings: [] };
         const cleanedNatural = cleanNaturalText(outputRegex.text);
         const strippedStructuredOutput = cleanedNatural !== outputRegex.text.trim();
-        const styleSanitized = sanitizeStoryStyleText(cleanedNatural || outputRegex.text);
+        const useNativeStyleSanitizer = built.trace.mode === "writer-adapter";
+        const styleSanitized = useNativeStyleSanitizer
+          ? sanitizeStoryStyleText(cleanedNatural || outputRegex.text)
+          : { text: cleanedNatural || outputRegex.text, applied: [] };
         raw = styleSanitized.text || cleanedNatural || outputRegex.text;
         batch = adaptNaturalTextToStoryTurns(raw);
         let styleFailures: string[] = [];
