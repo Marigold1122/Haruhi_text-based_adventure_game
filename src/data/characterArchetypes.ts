@@ -1,7 +1,7 @@
-// 8 个角色原型——MBTI 测试结果映射目标
+// 7 个角色原型——MBTI 测试结果映射目标
 //
 // 每个原型有一个 8 维参数画像（profile），玩家做完测试后会得到自己的 8 维参数，
-// 与每个原型画像求欧氏距离，距离最小的即匹配。
+// 与每个原型画像求余弦相似度，相似度最高的即匹配。
 
 import type { CharacterCardV2 } from "@/types/character";
 import type { IdentityLevel } from "@/types/lorebook";
@@ -14,8 +14,7 @@ export type CharacterArchetype =
   | "asahina"
   | "koizumi"
   | "tsuruya"
-  | "asakura"
-  | "sasaki";
+  | "asakura";
 
 /**
  * 8 维参数（每项 0-10）。用于刻画一个人的"性格画像"。
@@ -222,26 +221,6 @@ export const archetypeInfo: Record<CharacterArchetype, ArchetypeInfo> = {
     portraitUrl: "/portraits/asakura.png",
     portraitColor: "#3d6fb6",
   },
-  sasaki: {
-    id: "sasaki",
-    name: "佐佐木型",
-    mbti: "INTJ-A（哲学辩证派）",
-    shortDesc: "理性、克制、爱说哲学性言论的辩证家",
-    longDesc: [
-      "你属于'对一切论点先转换成命题再检验'的辩证派——克制、理性、思维敏锐。",
-      "你脸上常挂着'沉稳的揶揄式微笑'，对'激情'和'信仰'天然警惕。",
-      "你对自我经常进行'自虐式批判'——这是你对所有论点先质疑前提的内在延伸。",
-    ].join("\n"),
-    defaultIdentity: "anomaly",
-    coreTraits: "理性主义、笑面、爱说哲学性言论、思维敏锐、克制、自虐式自我批判、对'激情/信仰'天然警惕",
-    profile: {
-      energy: 3, composure: 9, empathy: 5, curiosity: 8,
-      rationality: 10, assertiveness: 4, efficiency: 7, introspection: 10,
-    },
-    referenceCard: npcReferenceCards.sasaki,
-    portraitUrl: "/portraits/sasaki.png",
-    portraitColor: "#6b4f3a",
-  },
 };
 
 export const allArchetypes: CharacterArchetype[] = [
@@ -252,7 +231,6 @@ export const allArchetypes: CharacterArchetype[] = [
   "koizumi",
   "tsuruya",
   "asakura",
-  "sasaki",
 ];
 
 export function emptyStats(): Stats {

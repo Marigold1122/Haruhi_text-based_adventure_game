@@ -1,11 +1,16 @@
-// 人格匹配算法（v2 · 8 维参数 + 欧氏距离）
+// 人格匹配算法（v3 · 8 维参数 + 余弦相似度）
 //
 // 流程：
 //   1. computeRawStats —— 累计玩家答案给的所有参数加点
 //   2. computeMaxStats —— 计算每个参数在 10 道题里的理论最大可能加点
 //   3. normalizeStats —— 把玩家累计分按"该参数最大可能值的百分比 × 10"归一化到 0-10
-//   4. matchArchetype —— 与 8 个原型画像求欧氏距离，距离最小即匹配
+//   4. matchArchetype —— 与 7 个原型画像求余弦相似度，相似度最高即匹配
 //   5. similarityRanking —— 把所有原型按相似度排名（用于 UI 展示）
+//
+// 为什么用余弦相似度而非欧氏距离：
+//   原型 profile 在 8 维空间互相挨得很近（最小两两距离 ~6/28，纯空间区分困难）。
+//   余弦相似度衡量"形状对齐"——只要玩家画像与某原型的【方向】一致，
+//   即使总体强度有差异也能精确匹配，避免被"全维度都中等"的邻近原型吸纳。
 
 import {
   type CharacterArchetype,
@@ -72,25 +77,27 @@ export function normalizeStats(raw: Stats, max: Stats): Stats {
 }
 
 // ----------------------------------------------------------------------
-// 步骤 4：欧氏距离 + 匹配最近的原型
+// 步骤 4：余弦相似度 + 匹配相似度最高的原型
 // ----------------------------------------------------------------------
 
-export function distance(a: Stats, b: Stats): number {
-  let sum = 0;
+/**
+ * 余弦相似度——衡量两个向量"方向"的对齐度，不受总体强度影响。
+ * 范围 [0, 1]（因为 stats 都非负），1 = 完全同向，0 = 正交。
+ */
+export function cosineSimilarity(a: Stats, b: Stats): number {
+  let dot = 0, magA = 0, magB = 0;
   for (const k of statKeys) {
-    const diff = a[k] - b[k];
-    sum += diff * diff;
+    dot += a[k] * b[k];
+    magA += a[k] * a[k];
+    magB += b[k] * b[k];
   }
-  return Math.sqrt(sum);
+  if (magA === 0 || magB === 0) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
-/** 8 维向量在每个维度 0-10 的最大欧氏距离 = sqrt(8 × 100) ≈ 28.28 */
-export const MAX_DISTANCE = Math.sqrt(statKeys.length * 100);
-
-/** 把距离转换为相似度百分比（0-100） */
-export function similarityPercent(d: number): number {
-  const sim = Math.max(0, 1 - d / MAX_DISTANCE);
-  return Math.round(sim * 100);
+/** 把余弦相似度转换为百分比（0-100） */
+export function similarityPercent(cos: number): number {
+  return Math.round(Math.max(0, cos) * 100);
 }
 
 // ----------------------------------------------------------------------
@@ -98,12 +105,12 @@ export function similarityPercent(d: number): number {
 // ----------------------------------------------------------------------
 
 export type MatchResult = {
-  archetype: CharacterArchetype;       // 最匹配的原型
+  archetype: CharacterArchetype;       // 最匹配的原型（相似度最高）
   rawStats: Stats;                     // 玩家累计原始分（未归一化）
   normalizedStats: Stats;              // 归一化到 0-10 的玩家画像
-  ranking: Array<{                     // 所有原型按相似度排名
+  ranking: Array<{                     // 所有原型按相似度排名（高 → 低）
     archetype: CharacterArchetype;
-    distance: number;
+    cosine: number;                    // 余弦相似度 0-1
     similarity: number;                // 0-100
   }>;
 };
@@ -118,10 +125,10 @@ export function matchArchetype(
 
   const ranking = allArchetypes
     .map((a) => {
-      const d = distance(normalizedStats, archetypeInfo[a].profile);
-      return { archetype: a, distance: d, similarity: similarityPercent(d) };
+      const cos = cosineSimilarity(normalizedStats, archetypeInfo[a].profile);
+      return { archetype: a, cosine: cos, similarity: similarityPercent(cos) };
     })
-    .sort((x, y) => x.distance - y.distance);
+    .sort((x, y) => y.cosine - x.cosine);
 
   return {
     archetype: ranking[0].archetype,
