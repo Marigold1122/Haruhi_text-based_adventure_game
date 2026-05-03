@@ -151,6 +151,24 @@ export function StatusPanel({ state, characterName, trace, summaryStatus, queueL
           {trace.filteredLoreEntries?.length ? (
             <p className="muted small">过滤条目：{trace.filteredLoreEntries.join("、")}</p>
           ) : null}
+          {trace.forcedRagEntries?.length ? (
+            <p className="muted small">强制 RAG：{trace.forcedRagEntries.slice(0, 4).join(" / ")}</p>
+          ) : null}
+          {trace.ragStats ? (
+            <p className="muted small">
+              RAG: {trace.ragStats.selectedCount}/{trace.ragStats.totalCandidates}
+              {trace.ragStats.forcedEntityIds?.length ? ` · entities ${trace.ragStats.forcedEntityIds.join(", ")}` : ""}
+            </p>
+          ) : null}
+          {trace.plotDecision ? (
+            <p className="muted small">
+              Plot: {trace.plotDecision.storyletId ?? trace.plotDecision.canonEventId ?? trace.plotDecision.eventKind}
+              {` · ${trace.plotDecision.intensityTarget}/100`}
+            </p>
+          ) : null}
+          {trace.blandness ? (
+            <p className="muted small">平淡度：{trace.blandness.score}/100</p>
+          ) : null}
           {trace.warnings?.length ? (
             <p className="muted small">警告：{trace.warnings.slice(0, 2).join(" / ")}</p>
           ) : null}

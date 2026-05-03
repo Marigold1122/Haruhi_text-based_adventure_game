@@ -28,8 +28,7 @@ export function loadPromptMode(): PromptMode {
       return "legacy";
     }
     if (raw === "sillytavern-preset" || raw === "sillytavern-preset-natural") {
-      localStorage.setItem(MODE_KEY, "legacy");
-      return "legacy";
+      return raw;
     }
     if (!localStorage.getItem(WRITER_ADAPTER_MIGRATION_KEY)) {
       localStorage.setItem(WRITER_ADAPTER_MIGRATION_KEY, "1");

@@ -52,6 +52,7 @@ export function buildSillyTavernNaturalPrompt(input: StNaturalPromptInput): StNa
       outputMode: "natural",
       appendOutputContract: false,
       applyUserInputRegex: false,
+      maxTokensCap: 8000,
       extraRegexHits: [
         ...userInputRegex.applied,
         ...(input.worldInfoRegexHits ?? []),
@@ -65,9 +66,8 @@ export function buildSillyTavernNaturalPrompt(input: StNaturalPromptInput): StNa
     {
       role: "user" as const,
       content: [
-        "直接续写自然正文。",
-        "以上文 preset、资料、互动历史和最新互动为边界。",
-        "先写现场动作、声音或物件，再给短判断；结尾停在读者需要回应的一拍。",
+        "继续正文。",
+        "遵守上文 preset、资料、互动历史和最新互动；不要输出 JSON、Markdown、解释或项目字段。",
       ].join("\n"),
     },
   ];

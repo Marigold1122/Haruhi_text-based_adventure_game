@@ -17,6 +17,8 @@ import { buildSillyTavernNaturalPrompt } from "./stNaturalPromptEngine";
 import { buildWriterAdapterPrompt } from "./writerAdapterPromptEngine";
 import type { PromptBuildTrace, PromptMode } from "./types";
 import type { CanonEvent } from "@/data/canonTimeline";
+import type { PlotDecision } from "@/types/storylet";
+import type { BlandnessReport } from "@/lib/plot/blandness";
 
 export type PromptBuildInput = {
   mode: PromptMode;
@@ -34,6 +36,8 @@ export type PromptBuildInput = {
   identityGuide?: string;
   /** 若本批被原作时间线强制驱动，这是必须叙述的焦点 canon event */
   canonFocus?: CanonEvent;
+  plotDecision?: PlotDecision;
+  blandness?: BlandnessReport;
 };
 
 export type PromptBuildOutput = {

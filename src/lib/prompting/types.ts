@@ -1,4 +1,5 @@
 import type { SamplingParams } from "@/types/preset";
+import type { BlandnessReport } from "@/lib/plot/blandness";
 
 export type PromptMode =
   | "writer-adapter"
@@ -25,6 +26,22 @@ export type PromptBuildTrace = {
   skippedPrompts?: string[];
   warnings?: string[];
   filteredLoreEntries?: string[];
+  forcedRagEntries?: string[];
+  ragStats?: {
+    totalCandidates: number;
+    selectedCount: number;
+    droppedByGate?: string[];
+    droppedByBudget?: string[];
+    forcedEntityIds?: string[];
+  };
+  plotDecision?: {
+    eventKind: string;
+    storyletId?: string;
+    canonEventId?: string;
+    reason: string;
+    intensityTarget: number;
+  };
+  blandness?: BlandnessReport;
   messageCount?: number;
   sampling?: SamplingParams;
   naturalTextLength?: number;

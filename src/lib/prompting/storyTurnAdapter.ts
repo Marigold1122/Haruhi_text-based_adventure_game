@@ -223,9 +223,12 @@ function blocksFromInlineDialogue(line: string, fallbackSpeaker?: string): Story
     const after = line.slice(quoteEnd);
     const cueAfter = parseCueAfter(after);
     const isStandaloneSpeech = line.slice(cursor).trim().startsWith(match[0]) && /[。！？!?…]$/.test(quoteText);
+    const looksLikeImaginedSpeech = /(?:像是在|像在|仿佛在|好像在|表情|脸上|眼神|心里|脑子里|内心)[^。！？!?]{0,12}$/.test(before.trim());
     const explicitSpeaker = cueBefore.speaker ?? cueAfter.speaker;
     const speaker = explicitSpeaker ?? (isStandaloneSpeech ? fallbackSpeaker : undefined);
-    const shouldExtract = Boolean(explicitSpeaker || cueBefore.mood || cueAfter.mood || isStandaloneSpeech);
+    const shouldExtract = !looksLikeImaginedSpeech && Boolean(
+      explicitSpeaker || cueBefore.mood || cueAfter.mood || (isStandaloneSpeech && fallbackSpeaker),
+    );
 
     if (!shouldExtract) {
       continue;

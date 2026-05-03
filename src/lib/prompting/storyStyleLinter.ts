@@ -43,6 +43,14 @@ const WARNING_PATTERNS: Array<{ label: string; re: RegExp }> = [
 
 const SANITIZE_RULES: Array<{ label: string; apply: (text: string) => string }> = [
   {
+    label: "修正表情伪对白",
+    apply: (text) => text.replace(/(表情|脸上|眼神)([^。！？!?]{0,18}?)(?:像是|像在|像是在|仿佛在|好像在)\s*\n?\s*[「“]([^」”]{1,80})[」”]/g, "$1$2像写着：$3"),
+  },
+  {
+    label: "合并语气提示断行",
+    apply: (text) => text.replace(/(压低声音|低声|小声|大声|平静|兴奋|不满|疑惑|认真|紧张)(?:地)?(?:说|问|喊|叫)?\s*\n+\s*([「“])/g, "$1说$2"),
+  },
+  {
     label: "移除而是连接",
     apply: (text) => text.replace(/而(?=是)/g, ""),
   },
