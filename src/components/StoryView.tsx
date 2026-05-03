@@ -10,6 +10,7 @@ import { expandCardDescription, type RandomCharacterSeed } from "@/lib/randomMod
 import { applyTurn } from "@/lib/worldState";
 import { pushDate } from "@/lib/timeAdvance";
 import { decideEvent } from "@/lib/eventTrigger";
+import { governTurn } from "@/lib/plot/plotGovernor";
 import { type SummaryState, emptySummary, maybeUpdateSummary, tailHistory } from "@/lib/summary";
 import { startingPointById } from "@/data/startingPoints";
 import { renderTimelineContext } from "@/data/canonTimeline";
@@ -257,6 +258,13 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
 
     const visibleHistory = tailHistory(baseHistory, baseSummary);
     const sceneCast = startingPointById[next.startingPoint]?.sceneCast;
+    const governed = governTurn({
+      trigger: decision,
+      state: next,
+      history: baseHistory,
+      userInput: promptUser,
+      sceneCast,
+    });
     const timelineContext = renderTimelineContext({
       currentIso: next.date.iso,
       identity: next.identity,
@@ -270,7 +278,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       card,
       lorebook,
       state: next,
-      eventKind: decision.eventKind,
+      eventKind: governed.plot.eventKind,
       history: visibleHistory,
       summary: baseSummary.text,
       userInput: promptUser,
@@ -278,6 +286,8 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
       timelineContext,
       identityGuide,
       canonFocus: decision.canonFocus,
+      plotDecision: governed.plot,
+      blandness: governed.blandness,
     });
     if (decision.canonFocus && typeof console !== "undefined") {
       console.log(

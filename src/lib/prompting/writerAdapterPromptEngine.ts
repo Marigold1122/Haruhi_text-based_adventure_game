@@ -7,6 +7,10 @@ import type { WorldState } from "@/types/worldState";
 import type { PromptBuildTrace } from "./types";
 import { renderNaturalChatHistory, renderStoryTurnAsNaturalText } from "./naturalHistory";
 import { REFERENCE_STYLE_PROMPT } from "./referenceStyleProfile";
+import { buildContentAssetIndex } from "@/lib/rag/contentAssetIndex";
+import { formatRagEntry, selectRagEntries } from "@/lib/rag/ragSelector";
+import type { PlotDecision } from "@/types/storylet";
+import type { BlandnessReport } from "@/lib/plot/blandness";
 
 export type WriterAdapterPromptBuildInput = {
   card: CharacterCardV2;
@@ -19,6 +23,9 @@ export type WriterAdapterPromptBuildInput = {
   sceneCast?: string;
   timelineContext?: string;
   identityGuide?: string;
+  canonFocus?: import("@/data/canonTimeline").CanonEvent;
+  plotDecision?: PlotDecision;
+  blandness?: BlandnessReport;
 };
 
 export type WriterAdapterPromptBuildOutput = {
@@ -57,12 +64,25 @@ export function buildWriterAdapterPrompt(
     input.userInput,
   ].join("\n");
   const lore = selectLoreEntries({ lorebook: input.lorebook, state: input.state, scanText });
+  const assetIndex = buildContentAssetIndex({ includeNpcCards: true });
+  const sceneCastRag = selectRagEntries({
+    entries: assetIndex.entries,
+    state: input.state,
+    scanText,
+    sceneCast: input.sceneCast,
+    forceEntityIds: input.plotDecision?.ragHints.forceEntityIds,
+    forceEntryIds: input.plotDecision?.ragHints.forceEntryIds,
+    includeKinds: ["character_profile", "character_voice"],
+    maxEntries: 6,
+    maxEntriesPerEntity: 2,
+  });
   const authorsNote = renderAuthorsNote({
     preset,
     state: input.state,
     sceneCast: input.sceneCast,
     timelineContext: input.timelineContext,
     identityGuide: input.identityGuide,
+    canonFocus: input.canonFocus,
   });
 
   const historyText = renderNaturalChatHistory({
@@ -90,7 +110,12 @@ export function buildWriterAdapterPrompt(
       cardData.personality,
       cardData.scenario,
     ].filter(Boolean).join("\n\n")),
-    lore.length > 0 ? section("相关资料", lore.map(formatLoreEntry).join("\n\n")) : "",
+    lore.length > 0 || sceneCastRag.selected.length > 0
+      ? section("相关资料", [
+        ...lore.map(formatLoreEntry),
+        ...sceneCastRag.selected.map((item) => formatRagEntry(item.entry)),
+      ].join("\n\n"))
+      : "",
     input.summary ? section("滚动摘要", input.summary) : "",
     section("运行状态", [
       `当前日期：${input.state.date.display}`,
@@ -101,6 +126,7 @@ export function buildWriterAdapterPrompt(
       input.identityGuide ?? "",
       authorsNote,
     ].filter(Boolean).join("\n\n")),
+    input.plotDecision ? section("本轮剧情调度", renderPlotDecision(input.plotDecision, input.blandness)) : "",
     historyText ? section("互动历史", historyText) : "",
     section("最新互动", input.userInput),
     "请从最新互动自然续写正文。只写正文。",
@@ -118,7 +144,28 @@ export function buildWriterAdapterPrompt(
     trace: {
       mode: "writer-adapter",
       presetName: `writer-adapter:${preset.name}`,
-      activeLoreEntries: lore.map((entry) => entry.name ?? entry.keys[0] ?? "(unnamed)"),
+      activeLoreEntries: [
+        ...lore.map((entry) => entry.name ?? entry.keys[0] ?? "(unnamed)"),
+        ...sceneCastRag.selected.map((item) => item.entry.title),
+      ],
+      forcedRagEntries: sceneCastRag.selected
+        .filter((item) => item.reasons.includes("forced_entity") || item.reasons.includes("forced_entry"))
+        .map((item) => item.entry.title),
+      ragStats: {
+        totalCandidates: assetIndex.stats.totalEntries,
+        selectedCount: sceneCastRag.selected.length,
+        droppedByGate: sceneCastRag.droppedByGate.slice(0, 12),
+        droppedByBudget: sceneCastRag.droppedByBudget.slice(0, 12),
+        forcedEntityIds: sceneCastRag.forcedEntityIds,
+      },
+      plotDecision: input.plotDecision ? {
+        eventKind: input.plotDecision.eventKind,
+        storyletId: input.plotDecision.activeStorylet?.id,
+        canonEventId: input.plotDecision.canonFocus?.id,
+        reason: input.plotDecision.reason,
+        intensityTarget: input.plotDecision.intensityTarget,
+      } : undefined,
+      blandness: input.blandness,
       authorsNote,
       outputMode: "natural",
       adapterMode: "rule",
@@ -257,6 +304,22 @@ function messageTextForScan(message: ChatMessage): string {
 function formatLoreEntry(entry: LoreEntry): string {
   const head = entry.name ? `# ${entry.name}` : `# ${entry.keys[0] ?? "Entry"}`;
   return `${head}\n${entry.content}`;
+}
+
+function renderPlotDecision(plot: PlotDecision, blandness?: BlandnessReport): string {
+  const lines = [
+    `本轮力度约 ${plot.intensityTarget}/100，写成现场推进，不写成大纲。`,
+    plot.activeStorylet ? `取景起点：${plot.activeStorylet.hook}` : "",
+    plot.activeStorylet ? `现场阻力：${plot.activeStorylet.conflict}` : "",
+    plot.canonFocus ? `原作锚点：${plot.canonFocus.title}。${plot.canonFocus.summary}` : "",
+    plot.fixedFacts.length > 0 ? `必须守住：${plot.fixedFacts.join("；")}` : "",
+    plot.variableOutcomes.length > 0 ? `可以变化：${plot.variableOutcomes.join("；")}` : "",
+    blandness ? `节奏提醒：${blandness.score >= 61 ? "需要一个有后果的小动作或短对白" : "保持承接，不要只平移观察"}。` : "",
+    "如果最新互动或历史表述与“必须守住”冲突，以“必须守住”为准，把冲突前提改写成误听、流言、错觉或旁观角度。",
+    "不要在正文里出现“剧情钩子、固定事实、可变结果、强度目标、平淡度、确定目标、任务清单”等调度词。",
+    "不要把表情、眼神、内心模拟写成带引号的台词；只有真正说出口的话才用引号。",
+  ];
+  return lines.filter(Boolean).join("\n");
 }
 
 function section(title: string, body: string): string {

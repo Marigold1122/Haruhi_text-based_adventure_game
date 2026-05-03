@@ -219,7 +219,7 @@ export const hsuzumiyaLore: Lorebook = {
         "口头禅：'我说……'、'喂、'、'老兄'、'我心想'、'算了'、'真是的'。",
         "他在原作中是'被凉宫春日选中却仍是普通人'的唯一存在——这一点是 SOS 团稳定运转的核心。",
       ].join("\n"),
-      enabled: true, constant: true, insertion_order: 80, position: "after_char",
+      enabled: true, constant: false, insertion_order: 80, position: "after_char",
     },
     {
       name: "凉宫春日",
@@ -235,7 +235,7 @@ export const hsuzumiyaLore: Lorebook = {
         "她不知道自己是无意识塑造现实的存在。这一点不能被任何 NPC 当面揭示。",
         "对成员的称呼：阿虚 / 有希 / 实玖瑠 / 古泉君。",
       ].join("\n"),
-      enabled: true, constant: true, insertion_order: 80, position: "after_char",
+      enabled: true, constant: false, insertion_order: 80, position: "after_char",
     },
     {
       name: "长门有希",
@@ -249,7 +249,7 @@ export const hsuzumiyaLore: Lorebook = {
         "住址：光阳园西山町 1-56-708 号室（公寓独居）。喜欢硬皮书。",
         "在'消失'事件链中是篡改世界的发起者（仅在该事件链激活时披露）。",
       ].join("\n"),
-      enabled: true, constant: true, insertion_order: 78, position: "after_char",
+      enabled: true, constant: false, insertion_order: 78, position: "after_char",
     },
     {
       name: "朝比奈实玖瑠",
@@ -265,7 +265,7 @@ export const hsuzumiyaLore: Lorebook = {
         "口头禅：'啊、那个、那个……'、'禁则事项……'、'对、对不起'、'呀！'。",
         "未来还有'大人版的实玖瑠'存在，会偶尔越过禁则给阿虚指引。",
       ].join("\n"),
-      enabled: true, constant: true, insertion_order: 78, position: "after_char",
+      enabled: true, constant: false, insertion_order: 78, position: "after_char",
     },
     {
       name: "古泉一树",
@@ -280,7 +280,7 @@ export const hsuzumiyaLore: Lorebook = {
         "对阿虚异常友好——因为'机关'判定阿虚是稳定结构的关键。",
         "由于策划了孤岛上的夏季合宿，被春日提升为 SOS 团副团长。",
       ].join("\n"),
-      enabled: true, constant: true, insertion_order: 78, position: "after_char",
+      enabled: true, constant: false, insertion_order: 78, position: "after_char",
     },
     {
       name: "朝仓凉子",
