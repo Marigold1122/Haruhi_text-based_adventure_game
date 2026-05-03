@@ -19,7 +19,9 @@ export function StatusPanel({ state, characterName, trace, summaryStatus, queueL
         <h4>{trace?.mode === "sillytavern-preset-natural" ? "当前主角" : "第一人称 POV"}</h4>
         <p className="big">{characterName}</p>
         <p className="muted">
-          {trace?.mode === "sillytavern-preset-natural"
+          {trace?.mode === "writer-adapter"
+            ? `参考文风单通模式 · ${identityLabel(state.identity)}`
+            : trace?.mode === "sillytavern-preset-natural"
             ? `ST natural 模式尊重 preset 视角 · ${identityLabel(state.identity)}`
             : `叙述以「${characterName}」的「我」展开 · ${identityLabel(state.identity)}`}
         </p>
@@ -112,6 +114,15 @@ export function StatusPanel({ state, characterName, trace, summaryStatus, queueL
           {trace.naturalTextLength !== undefined && (
             <p className="muted small">Natural text: {trace.naturalTextLength} chars</p>
           )}
+          {trace.styleProfile && (
+            <p className="muted small">Style profile: {trace.styleProfile}</p>
+          )}
+          {trace.styleFailures?.length ? (
+            <p className="muted small">文风硬失败：{trace.styleFailures.slice(0, 3).join(" / ")}</p>
+          ) : null}
+          {trace.styleWarnings?.length ? (
+            <p className="muted small">文风警告：{trace.styleWarnings.slice(0, 3).join(" / ")}</p>
+          ) : null}
           <p className="muted">激活条目：</p>
           <ul className="trace-list">
             {trace.activeLoreEntries.slice(0, 6).map((n, i) => (

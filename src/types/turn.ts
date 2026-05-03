@@ -19,6 +19,19 @@ export type VoiceCue = {
   pauseAfterMs?: number;
 };
 
+export type StoryBlock =
+  | {
+      type: "narration";
+      text: string;
+    }
+  | {
+      type: "dialogue";
+      speaker: string;
+      text: string;
+      mood?: string;
+      tts?: VoiceCue;
+    };
+
 export type StateChanges = {
   haruhiSatisfactionDelta?: number;
   worldStabilityDelta?: number;
@@ -69,6 +82,12 @@ export type StoryTurn = {
    * dialogue 段优先由 LLM 的 tone / emotion / delivery 等字段填充。
    */
   tts?: VoiceCue;
+
+  /**
+   * 一个点击展示单元内的连续文本块。新 Writer/Adapter 模式会优先填这里；
+   * 旧存档和旧协议仍然只依赖 narration/speaker。
+   */
+  blocks?: StoryBlock[];
 
   /**
    * 旧的 dialogue 数组（已废弃，保留向前兼容旧存档）。

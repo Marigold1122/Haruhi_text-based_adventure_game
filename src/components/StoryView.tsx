@@ -5,7 +5,7 @@ import type { Lorebook } from "@/types/lorebook";
 import type { WorldState } from "@/types/worldState";
 import type { ChatMessage, StoryTurn } from "@/types/turn";
 
-import { fallbackTurn, runLLMBatch, runLLMText } from "@/lib/llm";
+import { fallbackTurn, parseEventJsonBatch, runLLMBatch, runLLMText } from "@/lib/llm";
 import { expandCardDescription, type RandomCharacterSeed } from "@/lib/randomMode";
 import { applyTurn } from "@/lib/worldState";
 import { pushDate } from "@/lib/timeAdvance";
@@ -19,7 +19,9 @@ import { save, load, clear, type SaveBlob } from "@/lib/storage";
 import { loadSettings } from "@/lib/settings";
 import { buildPromptForTurn } from "@/lib/prompting";
 import type { PromptBuildTrace, PromptMode } from "@/lib/prompting/types";
-import { adaptNaturalTextToStoryTurns } from "@/lib/prompting/storyTurnAdapter";
+import { adaptNaturalTextToStoryTurns, cleanNaturalText } from "@/lib/prompting/storyTurnAdapter";
+import { formatStyleLintProblems, lintStoryStyle, sanitizeStoryStyleText } from "@/lib/prompting/storyStyleLinter";
+import { buildStoryMetadataPrompt } from "@/lib/prompting/writerAdapterPromptEngine";
 import { parseSillyTavernPresetJson } from "@/lib/sillytavern/presetParser";
 import {
   applySillyTavernRegexScripts,
@@ -163,6 +165,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     if (prefetchingRef.current) return;   // 已有后台请求
     if (ending) return;                   // 故事结束
     if (queue.length >= MAX_QUEUE) return; // 缓冲已满
+    if (queue.some((t) => t.requiresChoice)) return; // 不越过尚未展示的选择节点预取
 
     const lastShown = turns[turns.length - 1];
     if (lastShown?.requiresChoice) return; // 当前段要玩家选择，不能预取后续
@@ -285,7 +288,62 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
 
     let raw = "";
     let batch: StoryTurn[] = [];
-    if (built.trace.outputMode === "natural") {
+    if (built.trace.outputMode === "two-pass") {
+      try {
+        const metadata = buildStoryMetadataPrompt({
+          state: next,
+          userInput: promptUser,
+          characterName: card.data.name,
+          sampling: built.sampling,
+        });
+        const [writerResult, metadataResult] = await Promise.allSettled([
+          runLLMText({ messages: built.messages, sampling: built.sampling }),
+          runLLMText({ messages: metadata.messages, sampling: metadata.sampling }),
+        ]);
+
+        if (writerResult.status === "rejected") {
+          const msg = writerResult.reason instanceof Error ? writerResult.reason.message : String(writerResult.reason);
+          throw new Error(msg);
+        }
+
+        const rawNatural = writerResult.value;
+        const cleanedNatural = cleanNaturalText(rawNatural);
+        const styleSanitized = sanitizeStoryStyleText(cleanedNatural || rawNatural);
+        raw = styleSanitized.text || cleanedNatural || rawNatural;
+        batch = ensureFinalChoiceForTwoPass(adaptNaturalTextToStoryTurns(raw));
+
+        const metadataTurn = metadataResult.status === "fulfilled"
+          ? parseEventJsonBatch(metadataResult.value)[0]
+          : undefined;
+        if (metadataTurn) {
+          batch = mergeParallelMetadata(batch, metadataTurn);
+        }
+
+        setTrace((prev) => prev ? ({
+          ...prev,
+          warnings: [
+            ...(prev.warnings ?? []),
+            ...(metadataResult.status === "rejected"
+              ? [`并行元数据生成失败，已使用规则兜底：${metadataResult.reason instanceof Error ? metadataResult.reason.message : String(metadataResult.reason)}`]
+              : metadataTurn
+                ? []
+                : ["并行元数据未解析成功，已使用规则兜底。"]),
+            ...styleSanitized.applied.map((name) => `夏瑾式输出清洗：${name}`),
+          ],
+          naturalTextLength: rawNatural.length,
+          adapterMode: metadataTurn ? "parallel-llm" : "rule",
+          messageCount: (prev.messageCount ?? 0) + metadata.messages.length,
+        }) : prev);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        batch = [fallbackTurn(`LLM 调用失败：${msg}`)];
+        setTrace((prev) => prev ? ({
+          ...prev,
+          warnings: [...(prev.warnings ?? []), `Writer/Adapter 调用失败：${msg}`],
+          adapterMode: "rule",
+        }) : prev);
+      }
+    } else if (built.trace.outputMode === "natural") {
       try {
         const rawNatural = await runLLMText({ messages: built.messages, sampling: built.sampling });
         const outputRegex = applySillyTavernRegexScripts(
@@ -294,14 +352,32 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
           SILLYTAVERN_REGEX_PLACEMENT.AI_OUTPUT,
           { depth: 0 },
         );
-        raw = outputRegex.text;
+        const cleanedNatural = cleanNaturalText(outputRegex.text);
+        const strippedStructuredOutput = cleanedNatural !== outputRegex.text.trim();
+        const styleSanitized = sanitizeStoryStyleText(cleanedNatural || outputRegex.text);
+        raw = styleSanitized.text || cleanedNatural || outputRegex.text;
         batch = adaptNaturalTextToStoryTurns(raw);
+        let styleFailures: string[] = [];
+        let styleWarnings: string[] = [];
+        const styleTraceWarnings: string[] = [];
+        if (built.trace.mode === "writer-adapter") {
+          const lint = lintStoryStyle(raw, batch);
+          styleFailures = lint.failures;
+          styleWarnings = lint.warnings;
+          styleTraceWarnings.push(...formatStyleLintProblems(lint));
+          if (strippedStructuredOutput) {
+            styleTraceWarnings.push("已清理混入自然正文的结构化输出块。");
+          }
+          styleTraceWarnings.push(...styleSanitized.applied.map((name) => `夏瑾式输出清洗：${name}`));
+        }
         setTrace((prev) => prev ? ({
           ...prev,
           regexHits: [...new Set([...(prev.regexHits ?? []), ...outputRegex.applied])],
-          warnings: [...(prev.warnings ?? []), ...outputRegex.warnings],
+          warnings: [...(prev.warnings ?? []), ...outputRegex.warnings, ...styleTraceWarnings],
           naturalTextLength: raw.length,
           adapterMode: "rule",
+          styleFailures,
+          styleWarnings,
         }) : prev);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -355,7 +431,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const userMsg: ChatMessage = { role: "user", content: promptUser };
     const aiMsg: ChatMessage = {
       role: "assistant",
-      content: isSillyTavernMode(promptRuntime.mode) ? renderBatchForPrompt(batch) : raw,
+      content: storesAssistantAsNaturalHistory(promptRuntime.mode) ? renderBatchForPrompt(batch) : raw,
       parsed: batch[0],
     };
     const nextHistory = [...baseHistory, userMsg, aiMsg];
@@ -466,7 +542,7 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     setHistory((prev) => replaceLastParsedAssistant(
       prev,
       updated,
-      isSillyTavernMode(promptRuntime.mode) ? renderTurnForPrompt(updated) : serializeTurn(updated),
+      storesAssistantAsNaturalHistory(promptRuntime.mode) ? renderTurnForPrompt(updated) : serializeTurn(updated),
     ));
   }
 
@@ -649,6 +725,63 @@ function withRuntimeWarnings(trace: PromptBuildTrace, runtime: PromptRuntime): P
   };
 }
 
+function ensureFinalChoiceForTwoPass(batch: StoryTurn[]): StoryTurn[] {
+  if (batch.length === 0) return batch;
+  const last = batch[batch.length - 1];
+  if (last.requiresChoice && last.choices.length > 0) return batch;
+  return [
+    ...batch.slice(0, -1),
+    {
+      ...last,
+      requiresChoice: true,
+      choices: last.choices.length > 0 ? last.choices : [
+        "继续观察眼前的变化",
+        "主动开口推进当前事件",
+        "把注意力转向细节线索",
+      ],
+    },
+  ];
+}
+
+function mergeParallelMetadata(batch: StoryTurn[], metadata: StoryTurn): StoryTurn[] {
+  if (batch.length === 0) return batch;
+  const lastIndex = batch.length - 1;
+  return batch.map((turn, index) => {
+    if (index === 0 && index === lastIndex) {
+      return mergeFirstMetadata(mergeLastMetadata(turn, metadata), metadata);
+    }
+    if (index === 0) return mergeFirstMetadata(turn, metadata);
+    if (index === lastIndex) return mergeLastMetadata(turn, metadata);
+    return {
+      ...turn,
+      pace: metadata.pace,
+    };
+  });
+}
+
+function mergeFirstMetadata(turn: StoryTurn, metadata: StoryTurn): StoryTurn {
+  return {
+    ...turn,
+    eventTitle: metadata.eventTitle || turn.eventTitle,
+    scene: metadata.scene || turn.scene,
+    time: metadata.time || turn.time,
+    mood: turn.mood || metadata.mood,
+    pace: metadata.pace,
+  };
+}
+
+function mergeLastMetadata(turn: StoryTurn, metadata: StoryTurn): StoryTurn {
+  return {
+    ...turn,
+    stateChanges: metadata.stateChanges ?? turn.stateChanges,
+    pace: metadata.pace,
+    timeAdvance: metadata.timeAdvance,
+    requiresChoice: true,
+    choices: metadata.choices.length > 0 ? metadata.choices : turn.choices,
+    chain: metadata.chain ?? turn.chain,
+  };
+}
+
 function applyPresetOutputRegex(
   turn: StoryTurn,
   runtime: PromptRuntime,
@@ -663,7 +796,23 @@ function isSillyTavernMode(mode: PromptMode): boolean {
   return mode === "sillytavern-preset" || mode === "sillytavern-preset-natural";
 }
 
+function storesAssistantAsNaturalHistory(mode: PromptMode): boolean {
+  return mode === "writer-adapter" || isSillyTavernMode(mode);
+}
+
 function renderTurnForPrompt(turn: StoryTurn): string {
+  if (turn.blocks?.length) {
+    return turn.blocks
+      .map((block) => {
+        if (block.type === "dialogue") {
+          return `${block.speaker}${block.mood ? `（${block.mood}）` : ""}：「${block.text}」`;
+        }
+        return block.text;
+      })
+      .filter((part) => part.trim())
+      .join("\n");
+  }
+
   const currentLine = turn.speaker
     ? `${turn.speaker}${turn.mood ? `（${turn.mood}）` : ""}：「${turn.narration}」`
     : turn.narration;

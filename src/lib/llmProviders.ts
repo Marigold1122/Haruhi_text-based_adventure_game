@@ -18,7 +18,7 @@ export const openAICompatibleLLM = (settings: LLMSettings): LLMCall =>
       throw new Error("尚未配置 API key。点击右上角「设置」录入。");
     }
 
-    const body = {
+    const body: Record<string, unknown> = {
       model: settings.model,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       temperature: sampling.temperature ?? settings.temperature ?? 0.9,
@@ -27,6 +27,11 @@ export const openAICompatibleLLM = (settings: LLMSettings): LLMCall =>
       presence_penalty: sampling.presence_penalty,
       frequency_penalty: sampling.frequency_penalty,
     };
+    if (isOfficialDeepSeekEndpoint(settings)) {
+      // DeepSeek V4 thinking defaults to enabled. Creative writing should use
+      // non-thinking mode so temperature/top_p take effect and latency stays low.
+      body.thinking = { type: "disabled" };
+    }
 
     const res = await fetch(`${stripTrailing(settings.baseURL)}/chat/completions`, {
       method: "POST",
@@ -126,6 +131,15 @@ export const withRetry =
 
 function stripTrailing(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
+}
+
+function isOfficialDeepSeekEndpoint(settings: LLMSettings): boolean {
+  try {
+    const host = new URL(settings.baseURL).host.toLowerCase();
+    return host === "api.deepseek.com" || host.endsWith(".api.deepseek.com");
+  } catch {
+    return settings.baseURL.toLowerCase().includes("api.deepseek.com");
+  }
 }
 
 function formatHttpError(status: number, body: string, baseURL: string): string {

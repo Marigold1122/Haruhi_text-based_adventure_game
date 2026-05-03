@@ -22,6 +22,18 @@ export function renderNaturalChatHistory(opts: {
 }
 
 export function renderStoryTurnAsNaturalText(turn: StoryTurn): string {
+  if (turn.blocks?.length) {
+    return turn.blocks
+      .map((block) => {
+        if (block.type === "dialogue") {
+          return `${block.speaker}${block.mood ? `（${block.mood}）` : ""}：「${block.text}」`;
+        }
+        return block.text;
+      })
+      .filter((part) => part.trim())
+      .join("\n");
+  }
+
   const dialogue = turn.dialogue
     .map((line) => {
       const text = line.text.trim();
@@ -37,9 +49,8 @@ export function renderStoryTurnAsNaturalText(turn: StoryTurn): string {
 function renderMessage(message: ChatMessage, userName: string, assistantName: string): string {
   if (message.role === "system") return "";
   const label = message.role === "assistant" ? assistantName : userName;
-  const content = message.parsed
-    ? renderStoryTurnAsNaturalText(message.parsed)
-    : stripStructuredNoise(message.content);
+  const contentFromMessage = stripStructuredNoise(message.content);
+  const content = contentFromMessage || (message.parsed ? renderStoryTurnAsNaturalText(message.parsed) : "");
   if (!content.trim()) return "";
   return `${label}：\n${content.trim()}`;
 }

@@ -62,7 +62,11 @@ export function buildSillyTavernNaturalPrompt(input: StNaturalPromptInput): StNa
     ...compiled.messages,
     {
       role: "user" as const,
-      content: "请严格依据上文 preset、资料、互动历史和最新互动开始创作正文。",
+      content: [
+        "直接续写自然正文。",
+        "以上文 preset、资料、互动历史和最新互动为边界。",
+        "先写现场动作、声音或物件，再给短判断；结尾停在读者需要回应的一拍。",
+      ].join("\n"),
     },
   ];
 

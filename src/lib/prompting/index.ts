@@ -14,6 +14,7 @@ import { buildLegacyPrompt } from "./legacyPromptEngine";
 import { filterLoreForSillyTavernPresetMode } from "./conflictPolicy";
 import { renderRuntimeWorldInfo } from "./runtimeContext";
 import { buildSillyTavernNaturalPrompt } from "./stNaturalPromptEngine";
+import { buildWriterAdapterPrompt } from "./writerAdapterPromptEngine";
 import type { PromptBuildTrace, PromptMode } from "./types";
 import type { CanonEvent } from "@/data/canonTimeline";
 
@@ -42,6 +43,10 @@ export type PromptBuildOutput = {
 };
 
 export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
+  if (input.mode === "writer-adapter") {
+    return buildWriterAdapterPrompt(input);
+  }
+
   if (input.mode === "legacy" || !input.stPreset) {
     return buildLegacyPrompt(input);
   }

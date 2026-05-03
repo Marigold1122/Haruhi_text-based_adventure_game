@@ -3,11 +3,11 @@ import type { ChatMessage } from "@/types/turn";
 const NATIVE_STYLE_GUIDE = [
   "[Native Style Layer]",
   "这一层只增强文字质感，不改变输出协议。",
-  "必须继续只输出一个 <event_json>...</event_json> 块，且 segments 必须是对象数组。",
-  "每个 segment 保持短段节奏：一个动作、一个观察、一个反应或一句对白，不要合并成长篇正文。",
-  "对白的 tone / emotion / delivery 是给 TTS 的元数据，不要写进台词 text 或旁白正文。",
-  "文风偏轻小说校园叙事：具体场景细节、人物动作反应、对白节拍、克制的内心观察；避免说明书口吻。",
-  "禁止输出 <正文>、</正文>、<thinking>、【正文】、正文如下、Markdown 代码块、模型自述或任何块外说明。",
+  "响应从 <event_json> 开始，以 </event_json> 结束；块外说明省略，segments 继续使用对象数组。",
+  "每个 segment 保持短段节奏：一个动作、一个观察、一个反应或一句对白。",
+  "TTS 信息只放 tone / emotion / delivery；dialogue.text 保留角色真正说出口的话。",
+  "文风方向：轻小说校园叙事，先写可感知现场，再给短判断；心理通过脚步、视线、手上动作、声音变化和物件细节显出来。",
+  "每批停在一个微选择瞬间：有人发问、道路分岔、异常贴近、读者需要回应。",
 ].join("\n");
 
 export function applyNativeStyleGuide(messages: ChatMessage[]): ChatMessage[] {

@@ -57,6 +57,18 @@ function renderChatHistory(history: ChatMessage[], currentUserInput: string): st
 }
 
 function renderTurnForPrompt(turn: NonNullable<ChatMessage["parsed"]>): string {
+  if (turn.blocks?.length) {
+    return turn.blocks
+      .map((block) => {
+        if (block.type === "dialogue") {
+          return `${block.speaker}${block.mood ? `（${block.mood}）` : ""}：「${block.text}」`;
+        }
+        return block.text;
+      })
+      .filter((part) => part.trim())
+      .join("\n\n");
+  }
+
   const dialogue = turn.dialogue
     .map((line) => {
       const text = line.text.trim();

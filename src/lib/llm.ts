@@ -4,7 +4,7 @@
 // MVP 阶段用 mockLLM 返回拼好的 <event_json> 文本，保证完整闭环。
 // 后续替换为真实 chat completion 调用即可（OpenAI / Claude / 本地 LLM 同 ChatML 模式）。
 
-import type { ChatMessage, StoryTurn, TimeAdvance, VoiceCue } from "@/types/turn";
+import type { ChatMessage, StoryBlock, StoryTurn, TimeAdvance, VoiceCue } from "@/types/turn";
 import type { SamplingParams } from "@/types/preset";
 import type { WorldState } from "@/types/worldState";
 import { adaptNaturalTextToStoryTurns } from "@/lib/prompting/storyTurnAdapter";
@@ -88,7 +88,7 @@ function objectToTurn(obj: unknown): StoryTurn | null {
   if (!obj || typeof obj !== "object") return null;
   const o = obj as Record<string, unknown>;
   if (typeof o.eventTitle !== "string") return null;
-  if (typeof o.narration !== "string") return null;
+  if (typeof o.narration !== "string" && !Array.isArray(o.blocks)) return null;
   if (!Array.isArray(o.choices)) return null;
   return finalizeTurn(o);
 }
@@ -126,15 +126,21 @@ function finalizeTurn(o: Record<string, unknown>): StoryTurn {
       : undefined;
   const tts = normalizeVoiceCue(o);
   const mood = stringOrUndefined(o.mood) ?? stringOrUndefined(o.tone) ?? "";
+  const blocks = normalizeBlocks(o.blocks);
+  const onlyDialogueBlock = blocks.length === 1 && blocks[0].type === "dialogue" ? blocks[0] : null;
+  const narration = typeof o.narration === "string"
+    ? stripGeneratedTextPrefix(o.narration)
+    : flattenBlocks(blocks);
 
   return {
     eventTitle: stripGeneratedTextPrefix(o.eventTitle as string),
     scene: typeof o.scene === "string" ? stripGeneratedTextPrefix(o.scene) : "",
     time: typeof o.time === "string" ? stripGeneratedTextPrefix(o.time) : "",
-    mood,
-    narration: stripGeneratedTextPrefix(o.narration as string),
-    speaker,
-    tts,
+    mood: onlyDialogueBlock?.mood ?? mood,
+    narration,
+    speaker: onlyDialogueBlock?.speaker ?? speaker,
+    tts: onlyDialogueBlock?.tts ?? tts,
+    blocks: blocks.length > 0 ? blocks : undefined,
     dialogue: cleanDialogue(o.dialogue),
     stateChanges: (o.stateChanges as StoryTurn["stateChanges"]) ?? {},
     pace,
@@ -285,6 +291,83 @@ function expandNarrations(wrapper: Record<string, unknown>): StoryTurn[] {
   });
 }
 
+function expandBeats(wrapper: Record<string, unknown>): StoryTurn[] {
+  const raw = wrapper.beats;
+  if (!Array.isArray(raw)) return [];
+  const beats = raw
+    .map(normalizeBeat)
+    .filter((beat): beat is { blocks: StoryBlock[] } => beat !== null && beat.blocks.length > 0);
+  if (beats.length === 0) return [];
+
+  const eventTitle = typeof wrapper.eventTitle === "string" ? stripGeneratedTextPrefix(wrapper.eventTitle) : "";
+  const scene = typeof wrapper.scene === "string" ? stripGeneratedTextPrefix(wrapper.scene) : "";
+  const time = typeof wrapper.time === "string" ? stripGeneratedTextPrefix(wrapper.time) : "";
+  const mood = typeof wrapper.mood === "string" ? stripGeneratedTextPrefix(wrapper.mood) : "";
+  const pace: StoryTurn["pace"] = wrapper.pace === "summary" ? "summary" : "scene";
+  const chain = wrapper.chain as StoryTurn["chain"];
+
+  const ta = (wrapper.timeAdvance ?? {}) as Partial<TimeAdvance>;
+  const timeAdvance: TimeAdvance = {
+    days: typeof ta.days === "number" ? ta.days : undefined,
+    hours: typeof ta.hours === "number" ? ta.hours : undefined,
+    minutes: typeof ta.minutes === "number" ? ta.minutes : undefined,
+    note: typeof ta.note === "string" ? ta.note : undefined,
+  };
+  if (
+    timeAdvance.days === undefined &&
+    timeAdvance.hours === undefined &&
+    timeAdvance.minutes === undefined
+  ) {
+    if (pace === "summary") timeAdvance.days = 1;
+    else timeAdvance.minutes = Math.max(beats.length * 2, 5);
+  }
+
+  const stateChanges = (wrapper.stateChanges as StoryTurn["stateChanges"]) ?? {};
+  const rawChoices = (wrapper.choices as string[]) ?? [];
+  const requiresChoice = typeof wrapper.requiresChoice === "boolean"
+    ? wrapper.requiresChoice
+    : rawChoices.length > 0;
+  const choices = requiresChoice
+    ? rawChoices.filter((c) => typeof c === "string").map(stripGeneratedTextPrefix).slice(0, 4)
+    : [];
+
+  return beats.map((beat, i) => {
+    const isFirst = i === 0;
+    const isLast = i === beats.length - 1;
+    const onlyDialogue = beat.blocks.length === 1 && beat.blocks[0].type === "dialogue"
+      ? beat.blocks[0]
+      : null;
+    const narration = flattenBlocks(beat.blocks);
+
+    return {
+      eventTitle: isFirst ? eventTitle : "",
+      scene: isFirst ? scene : "",
+      time: isFirst ? time : "",
+      mood: onlyDialogue?.mood ?? (isFirst ? mood : ""),
+      narration,
+      speaker: onlyDialogue?.speaker,
+      tts: onlyDialogue?.tts,
+      blocks: beat.blocks,
+      dialogue: [],
+      stateChanges: isLast ? stateChanges : {},
+      pace,
+      timeAdvance: isLast ? timeAdvance : { minutes: 0 },
+      requiresChoice: isLast ? requiresChoice : false,
+      choices: isLast ? choices : [],
+      chain,
+    };
+  });
+}
+
+function normalizeBeat(value: unknown): { blocks: StoryBlock[] } | null {
+  if (!value || typeof value !== "object") return null;
+  const beat = value as Record<string, unknown>;
+  const blocks = normalizeBlocks(beat.blocks);
+  if (blocks.length > 0) return { blocks };
+  const single = normalizeBlock(beat);
+  return single ? { blocks: [single] } : null;
+}
+
 function expandSegments(wrapper: Record<string, unknown>): StoryTurn[] {
   const raw = wrapper.segments;
   if (!Array.isArray(raw)) return [];
@@ -376,6 +459,50 @@ function normalizeSegment(segment: Record<string, unknown>): NormalizedSegment |
   };
 }
 
+function normalizeBlocks(value: unknown): StoryBlock[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((block): block is Record<string, unknown> => Boolean(block) && typeof block === "object")
+    .map(normalizeBlock)
+    .filter((block): block is StoryBlock => Boolean(block));
+}
+
+function normalizeBlock(block: Record<string, unknown>): StoryBlock | null {
+  const text = stringOrUndefined(block.text) ?? stringOrUndefined(block.narration);
+  if (!text) return null;
+  const speaker = stringOrUndefined(block.speaker);
+  const type = block.type === "dialogue" || speaker ? "dialogue" : "narration";
+  if (type === "narration") {
+    return { type: "narration", text };
+  }
+  if (!speaker) {
+    return { type: "narration", text };
+  }
+  const mood =
+    stringOrUndefined(block.mood) ??
+    stringOrUndefined(block.tone) ??
+    stringOrUndefined(block.emotion);
+  return {
+    type: "dialogue",
+    speaker,
+    text,
+    mood,
+    tts: normalizeVoiceCue({ ...block, tone: mood ?? block.tone }),
+  };
+}
+
+function flattenBlocks(blocks: StoryBlock[]): string {
+  return blocks
+    .map((block) => {
+      if (block.type === "dialogue") {
+        return `${block.speaker}${block.mood ? `（${block.mood}）` : ""}：「${block.text}」`;
+      }
+      return block.text;
+    })
+    .filter((part) => part.trim())
+    .join("\n");
+}
+
 /**
  * 批量解析：返回 StoryTurn 数组。
  * 解析优先级：
@@ -409,6 +536,9 @@ export function parseEventJsonBatch(text: string): StoryTurn[] {
   // ① 顶层对象 + segments 数组（新协议优先）
   if (!Array.isArray(obj) && typeof obj === "object") {
     const wrapper = obj as Record<string, unknown>;
+    if (Array.isArray(wrapper.beats) && wrapper.beats.length > 0) {
+      return truncateAtFirstChoice(expandBeats(wrapper));
+    }
     if (Array.isArray(wrapper.segments) && wrapper.segments.length > 0) {
       return truncateAtFirstChoice(expandSegments(wrapper));
     }

@@ -54,7 +54,12 @@ export function MessageStream({
   }, [turns.length, pendingUserAction, loading]);
 
   function saveLatestEdit(turn: StoryTurn) {
-    onUpdateLatest?.({ ...turn, narration: draftNarration });
+    onUpdateLatest?.({
+      ...turn,
+      narration: draftNarration,
+      speaker: undefined,
+      blocks: draftNarration ? [{ type: "narration", text: draftNarration }] : undefined,
+    });
     setEditingLatest(false);
   }
 
@@ -76,7 +81,9 @@ export function MessageStream({
     >
       {turns.map((t, i) => {
         const isLatest = i === latestIndex;
-        const isDialogueTurn = !!t.speaker;
+        const isPureDialogueTurn = t.blocks?.length
+          ? t.blocks.length === 1 && t.blocks[0].type === "dialogue"
+          : !!t.speaker;
         // 仅第一段（或事件标题不为空且与上一段不同）显示标题与场景标签——避免每个短段都重复 header
         const previousEventTitle = i > 0 ? turns[i - 1].eventTitle : "";
         const showHeader =
@@ -86,7 +93,7 @@ export function MessageStream({
         return (
           <article
             key={i}
-            className={`turn-card ${isLatest ? "current" : "past"} ${isDialogueTurn ? "dialogue-turn" : "narration-turn"}`}
+            className={`turn-card ${isLatest ? "current" : "past"} ${isPureDialogueTurn ? "dialogue-turn" : "narration-turn"}`}
           >
             {showHeader && (
               <header className="turn-head">
@@ -94,7 +101,7 @@ export function MessageStream({
                 <div className="turn-tags">
                   {t.scene && <span className="tag">{t.scene}</span>}
                   {t.time && <span className="tag">{t.time}</span>}
-                  {!isDialogueTurn && t.mood && <span className="tag mood">{t.mood}</span>}
+                  {!isPureDialogueTurn && t.mood && <span className="tag mood">{t.mood}</span>}
                   <span className={`tag pace ${t.pace}`}>
                     {t.pace === "summary" ? "概括 · 跳过日常" : "实时场景"}
                   </span>
@@ -136,7 +143,21 @@ export function MessageStream({
                   <button className="ghost-btn" onClick={() => setEditingLatest(false)}>取消</button>
                 </div>
               </div>
-            ) : isDialogueTurn ? (
+            ) : t.blocks?.length ? (
+              <div className="story-blocks">
+                {t.blocks.map((block, j) => (
+                  block.type === "dialogue" ? (
+                    <div key={j} className="dialogue-line standalone story-block dialogue-block">
+                      <span className="speaker">{block.speaker}</span>
+                      {block.mood && <span className="speaker-mood">{block.mood}</span>}
+                      <p className="speech">「{block.text}」</p>
+                    </div>
+                  ) : (
+                    <p key={j} className="narration story-block narration-block">{block.text}</p>
+                  )
+                ))}
+              </div>
+            ) : isPureDialogueTurn ? (
               <div className="dialogue-line standalone">
                 <span className="speaker">{t.speaker}</span>
                 {t.mood && <span className="speaker-mood">{t.mood}</span>}

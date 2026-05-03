@@ -3,6 +3,7 @@ import type { SillyTavernPresetSummary } from "./presetTypes";
 
 const MODE_KEY = "haruhi-text-adventure:prompt-mode:v1";
 const PRESET_KEY = "haruhi-text-adventure:sillytavern-preset:v1";
+const WRITER_ADAPTER_MIGRATION_KEY = "haruhi-text-adventure:writer-adapter-default:v1";
 
 export type StoredSillyTavernPreset = {
   fileName: string;
@@ -15,13 +16,29 @@ export type StoredSillyTavernPreset = {
 export function loadPromptMode(): PromptMode {
   try {
     const raw = localStorage.getItem(MODE_KEY);
+    if (raw === "writer-adapter") {
+      return raw;
+    }
+    if (raw === "legacy") {
+      if (!localStorage.getItem(WRITER_ADAPTER_MIGRATION_KEY)) {
+        localStorage.setItem(WRITER_ADAPTER_MIGRATION_KEY, "1");
+        localStorage.setItem(MODE_KEY, "writer-adapter");
+        return "writer-adapter";
+      }
+      return "legacy";
+    }
     if (raw === "sillytavern-preset" || raw === "sillytavern-preset-natural") {
       localStorage.setItem(MODE_KEY, "legacy");
       return "legacy";
     }
-    return "legacy";
+    if (!localStorage.getItem(WRITER_ADAPTER_MIGRATION_KEY)) {
+      localStorage.setItem(WRITER_ADAPTER_MIGRATION_KEY, "1");
+      localStorage.setItem(MODE_KEY, "writer-adapter");
+      return "writer-adapter";
+    }
+    return "writer-adapter";
   } catch {
-    return "legacy";
+    return "writer-adapter";
   }
 }
 

@@ -1477,6 +1477,21 @@ textarea {
   margin: 0;
 }
 
+.story-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.story-blocks .story-block {
+  margin: 0;
+}
+
+.story-blocks .dialogue-block + .narration-block,
+.story-blocks .narration-block + .dialogue-block {
+  margin-top: 2px;
+}
+
 /* turn-actions 紧凑 */
 .turn-card.dialogue-turn .turn-actions,
 .turn-card.narration-turn .turn-actions {

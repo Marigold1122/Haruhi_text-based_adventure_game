@@ -68,8 +68,7 @@ export function SettingsModal({ initial, onClose }: Props) {
       };
       saveStoredSillyTavernPreset(stored);
       setStoredPreset(stored);
-      updatePromptMode("legacy");
-      setPresetMsg(`已导入：${parsed.summary.name}。当前仍使用项目短句协议生成。`);
+      setPresetMsg(`已导入：${parsed.summary.name}。当前生成模式保持不变，preset 仅作为本地参考/编辑。`);
     } catch (e) {
       setPresetMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`);
     }
@@ -199,10 +198,11 @@ export function SettingsModal({ initial, onClose }: Props) {
             value={promptMode}
             onChange={(e) => updatePromptMode(e.target.value as PromptMode)}
           >
-            <option value="legacy">项目短句协议 + 轻量文风增强（推荐）</option>
+            <option value="writer-adapter">文笔模式：参考文风单通生成（推荐）</option>
+            <option value="legacy">快速模式：单通结构化生成</option>
           </select>
           <small className="hint">
-            当前黑客松演示固定走原项目 narrations 短句队列，避免 ST preset 接管后变成长段正文。
+            单次生成连续轻小说正文，再由规则切成可点击小段；内置参考文风、反 AI 味检查和硬失败自动修复。
           </small>
         </label>
 
