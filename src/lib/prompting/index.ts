@@ -12,7 +12,7 @@ import {
 } from "@/lib/sillytavern/regexEngine";
 import { buildLegacyPrompt } from "./legacyPromptEngine";
 import { filterLoreForSillyTavernPresetMode } from "./conflictPolicy";
-import { renderRuntimeWorldInfo } from "./runtimeContext";
+import { renderRuntimeWorldInfo, renderLateHardConstraints, buildCanonFocusDriver } from "./runtimeContext";
 import { buildSillyTavernNaturalPrompt } from "./stNaturalPromptEngine";
 import { buildWriterAdapterPrompt } from "./writerAdapterPromptEngine";
 import type { PromptBuildTrace, PromptMode } from "./types";
@@ -47,8 +47,25 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
     return buildWriterAdapterPrompt(input);
   }
 
+  // 末位硬约束在 legacy / sillytavern-preset / sillytavern-preset-natural 三种模式下都注入。
+  const lateHardConstraints = renderLateHardConstraints({
+    state: input.state,
+    canonFocus: input.canonFocus,
+  });
+
+  // 本批剧情驱动——若有 canon focus，把驱动指令拼到 userInput 末尾。
+  // 用户消息是 LLM 注意力最强位置，强制 LLM 跳出 history 同质化的格调框架。
+  // 注意：这是 prompt 时构造的临时增强，caller 把原始 userInput 存入 history 即可。
+  const enrichedUserInput = input.canonFocus
+    ? `${input.userInput}\n\n${buildCanonFocusDriver({ state: input.state, canonFocus: input.canonFocus })}`
+    : input.userInput;
+
   if (input.mode === "legacy" || !input.stPreset) {
-    return buildLegacyPrompt(input);
+    return buildLegacyPrompt({
+      ...input,
+      userInput: enrichedUserInput,
+      lateHardConstraints,
+    });
   }
 
   const scanText = [
@@ -79,7 +96,7 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
   const markerContext = {
     card: input.card,
     history: input.history,
-    currentUserInput: input.userInput,
+    currentUserInput: enrichedUserInput,
     worldInfoBefore: renderLoreEntries(loreBefore, regexScripts, worldInfoRegexHits, worldInfoRegexWarnings),
     worldInfoAfter: [
       renderLoreEntries(loreAfter, regexScripts, worldInfoRegexHits, worldInfoRegexWarnings),
@@ -98,6 +115,7 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
       activeLoreEntries,
       filteredLoreEntries: filtered.filteredNames,
       worldInfoRegexHits,
+      lateHardConstraints,
     });
     return {
       ...natural,
@@ -114,6 +132,7 @@ export function buildPromptForTurn(input: PromptBuildInput): PromptBuildOutput {
     options: {
       presetName: input.stPresetName,
       extraRegexHits: worldInfoRegexHits,
+      lateHardConstraints,
     },
   });
 

@@ -7,10 +7,11 @@
 //   - 春日满足度过低 → 闭锁空间事件链候选
 //   - 早期不要轻易触发事件链（前期 chain trigger 概率极低）
 
-import type { WorldState } from "@/types/worldState";
+import type { ActiveCanonState, DailyBudget, WorldState } from "@/types/worldState";
 import type { EventPresetKind } from "@/types/preset";
 import { pickChainForState } from "@/data/eventChains";
 import {
+  canonTimeline,
   getMainLinePendingTriggers,
   type CanonEvent,
 } from "@/data/canonTimeline";
@@ -22,11 +23,100 @@ export type TriggerDecision = {
   reason: string;
   /**
    * 若本批被原作时间线强制驱动，这里给出焦点 canon event。
-   * 上层（StoryView）应：① 把它注入 prompt 作为本批必须叙述的事件；
-   * ② 本批完成后把 id 追加到 state.triggeredCanonEvents 以避免重复触发。
+   * 上层（StoryView / playtest）应：
+   *   ① 把它注入 prompt 作为本批必须叙述的事件；
+   *   ② 应用层维护 state.activeCanon（增加 batchesProgress；完成时 mark triggered + 重置 cooldown）。
    */
   canonFocus?: CanonEvent;
+  /**
+   * 当 canonFocus 是【新启动】的（不是延续 activeCanon）时，给出建议的 activeCanon 初值。
+   * 应用层据此初始化 state.activeCanon。延续模式下此字段不填，应用层只递增 batchesProgress。
+   */
+  proposedActiveCanon?: ActiveCanonState;
+  /** 当 canonFocus 是延续 activeCanon 时为 true；新启动为 false；无 canon 也是 false */
+  isCanonContinuation?: boolean;
 };
+
+/**
+ * 按 scope 决定 canon 计划批数。large 事件在 canon focus 块的 scopeBudget 已声明
+ * 4-6 批；这里取中间值。
+ */
+function plannedBatchesByScope(scope: CanonEvent["scope"]): number {
+  switch (scope) {
+    case "small":
+      return 1; // 最低成本，1 批演完
+    case "medium":
+      return 2; // 2 批演完（铺垫+高潮 / 高潮+收尾）
+    case "large":
+      return 4; // 4 批：intro → developing → climax → resolution
+  }
+}
+
+/**
+ * canon 间日常剧情批数预算——按日历间隔 + 上 canon scope 计算。
+ *
+ * 设计来自用户反馈："canon 间的日常缓冲规模不应该固定，而是综合两个因素：
+ *   ① 原著时间线两 canon 之间的间隔（天数）
+ *   ② 上一个 canon 的规模（large 之后流速可以更慢）
+ * "
+ *
+ * 公式：
+ *   - gap ≤ 1 天 → 0 批（紧邻 canon 直接触发，如 12-18→12-19 消失日链）
+ *   - gap ≤ 3 天 → 1 批（极短间隔）
+ *   - 否则 round(gap / avgDaysPerBatch)，clamp 到 [1, 8]
+ *     · large 后 avgDays=6（流速更慢，让玩家消化）
+ *     · medium 后 avgDays=5
+ *     · small 后 avgDays=4
+ *
+ * 校验（playtest 8 + canonTimeline 实测）：
+ *   · 04-08(large) → 05-07: gap=29 → round(29/6)=5 批 ✓ 用户期望 3-7
+ *   · 05-07(small) → 05-12: gap=5 → round(5/4)=1 批 ✓
+ *   · 07-23(large) → 10-18: gap=87 → 15→clamp 8 批 ✓ 暑假
+ *   · 06-25(large) → 06-28: gap=3 → 1 批 ✓ 三日改写期间
+ */
+export function planDailyBudget(
+  prevCanonIso: string,
+  prevCanonScope: CanonEvent["scope"],
+  nextCanonIso: string,
+): DailyBudget {
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  const gapDays = Math.round(
+    (new Date(nextCanonIso).getTime() - new Date(prevCanonIso).getTime()) / ONE_DAY,
+  );
+
+  let plannedBatches: number;
+  if (gapDays <= 1) {
+    plannedBatches = 0;
+  } else if (gapDays <= 3) {
+    plannedBatches = 1;
+  } else {
+    const avgDaysPerBatch =
+      prevCanonScope === "large" ? 6 : prevCanonScope === "small" ? 4 : 5;
+    plannedBatches = Math.max(1, Math.min(8, Math.round(gapDays / avgDaysPerBatch)));
+  }
+
+  return {
+    prevCanonIso,
+    prevCanonScope,
+    nextCanonIso,
+    plannedBatches,
+    elapsedBatches: 0,
+  };
+}
+
+/** 计算当前批属于该 canon 的 narrative phase（按 batchesProgress / total 比例分段） */
+function phaseFor(progress: number, total: number): ActiveCanonState["narrativePhase"] {
+  if (total <= 1) return "climax"; // 1 批 canon 直接给高潮
+  const ratio = progress / total;
+  if (ratio < 0.3) return "intro";
+  if (ratio < 0.7) return "developing";
+  if (ratio < 1.0) return "climax";
+  return "resolution";
+}
+
+function findCanonById(id: string): CanonEvent | undefined {
+  return canonTimeline.find((e) => e.id === id);
+}
 
 /**
  * canon event.visibility → preset eventKind 的映射。
@@ -65,21 +155,57 @@ const baseProb: Record<string, Record<EventPresetKind, number>> = {
 };
 
 export function decideEvent(state: WorldState, rng: () => number = Math.random): TriggerDecision {
-  // 最高优先级：原作时间线 main_line 事件——日期到了必须触发，按时间顺序依次发生。
-  // 这一段先于任何 RNG / 事件链判定，保证主线无论玩家做了什么选择都按原作推进。
+  // 优先级 1：继续正在演绎的 activeCanon（跨多批演完一个 canon 事件）
+  if (state.activeCanon) {
+    const focus = findCanonById(state.activeCanon.id);
+    if (focus) {
+      const nextProgress = state.activeCanon.batchesProgress + 1;
+      return {
+        eventKind: presetKindForCanonEvent(focus),
+        canonFocus: focus,
+        isCanonContinuation: true,
+        reason: `continuing activeCanon ${focus.id} (batch ${nextProgress}/${state.activeCanon.totalBatchesPlanned}, phase=${phaseFor(nextProgress, state.activeCanon.totalBatchesPlanned)})`,
+      };
+    }
+    // activeCanon id 找不到——异常，清空让下面正常流程接管
+  }
+
+  // 优先级 2：daily budget 检查 + 启动新 canon
+  // 流程：
+  //   ① 没有 dailyBudget（首批 / budget 已耗尽）→ 检查 pending canon 直接启动
+  //   ② 有 dailyBudget 且 elapsedBatches < plannedBatches → 还在日常缓冲期，本批走日常
+  //   ③ 有 dailyBudget 且 elapsedBatches >= plannedBatches → 缓冲期结束，下批可触发 canon
   const triggered = new Set(state.triggeredCanonEvents);
   const pending = getMainLinePendingTriggers(state.date.iso, triggered);
   if (pending.length > 0) {
-    const focus = pending[0]; // 已按 ISO 升序排序，取最早的一条
-    const proposedChain = focus.chainId
-      ? { id: focus.chainId, totalSteps: 4 }
-      : undefined;
-    return {
-      eventKind: presetKindForCanonEvent(focus),
-      proposedChain,
-      reason: `canon main_line forced: ${focus.id} (${focus.date.iso})`,
-      canonFocus: focus,
-    };
+    const budgetReady = !state.dailyBudget
+      || state.dailyBudget.elapsedBatches >= state.dailyBudget.plannedBatches;
+    if (budgetReady) {
+      const focus = pending[0];
+      const totalBatchesPlanned = plannedBatchesByScope(focus.scope);
+      const proposedActiveCanon: ActiveCanonState = {
+        id: focus.id,
+        scope: focus.scope,
+        batchesProgress: 1,
+        totalBatchesPlanned,
+        narrativePhase: phaseFor(1, totalBatchesPlanned),
+      };
+      const proposedChain = focus.chainId
+        ? { id: focus.chainId, totalSteps: 4 }
+        : undefined;
+      const budgetNote = state.dailyBudget
+        ? `dailyBudget exhausted (${state.dailyBudget.elapsedBatches}/${state.dailyBudget.plannedBatches})`
+        : "no dailyBudget (first canon or initial)";
+      return {
+        eventKind: presetKindForCanonEvent(focus),
+        proposedChain,
+        canonFocus: focus,
+        proposedActiveCanon,
+        isCanonContinuation: false,
+        reason: `start new canon ${focus.id} (scope=${focus.scope}, planned ${totalBatchesPlanned} batches; ${budgetNote})`,
+      };
+    }
+    // budget 未耗尽 — 本批走日常，让 canon 之间留出真实的日常剧情过渡
   }
 
   // 已在事件链中：直接返回 supernatural（preset 路由会接管）
@@ -146,5 +272,100 @@ export function manualTrigger(chainId: string, totalSteps = 4): TriggerDecision 
     eventKind: "supernatural",
     proposedChain: { id: chainId, totalSteps },
     reason: `manual trigger: ${chainId}`,
+  };
+}
+
+/**
+ * 批次结束时调用——根据 TriggerDecision 把 canon 进度 / dailyBudget 更新到 state。
+ *
+ * 四种情况：
+ *   ① 本批是新启动的 canon →
+ *      - 写入 activeCanon（progress=1）
+ *      - 若 totalBatchesPlanned===1 直接演完：mark triggered + 清空 activeCanon + 规划下个 dailyBudget
+ *      - dailyBudget 在 canon 启动期间清空（演 canon 期间不算日常）
+ *   ② 本批是 activeCanon 延续 → progress += 1；达到 total → mark triggered + 清空 + 规划下个 dailyBudget
+ *   ③ 本批是日常（dailyBudget 内）→ elapsedBatches += 1
+ *   ④ 本批是日常（无 budget）→ 不变（首批 / 全部 canon 演完后游离态）
+ */
+export function applyCanonProgress(state: WorldState, decision: TriggerDecision): WorldState {
+  // 情况 ①：新启动 canon
+  if (decision.proposedActiveCanon) {
+    const proposed = decision.proposedActiveCanon;
+    if (proposed.batchesProgress >= proposed.totalBatchesPlanned) {
+      // 1 批就演完（small scope, plannedBatches=1）
+      return finalizeCanon(state, proposed.id, proposed.scope);
+    }
+    // 多批 canon，开始演绎
+    return {
+      ...state,
+      activeCanon: proposed,
+      dailyBudget: null, // canon 期间没有日常 budget
+    };
+  }
+
+  // 情况 ②：延续 activeCanon
+  if (decision.isCanonContinuation && decision.canonFocus && state.activeCanon) {
+    const next = state.activeCanon.batchesProgress + 1;
+    const total = state.activeCanon.totalBatchesPlanned;
+    if (next >= total) {
+      // 演完
+      return finalizeCanon(state, decision.canonFocus.id, state.activeCanon.scope);
+    }
+    // 仍在演
+    return {
+      ...state,
+      activeCanon: {
+        ...state.activeCanon,
+        batchesProgress: next,
+        narrativePhase: phaseFor(next, total),
+      },
+      dailyBudget: null,
+    };
+  }
+
+  // 情况 ③ + ④：日常批
+  if (state.dailyBudget) {
+    return {
+      ...state,
+      dailyBudget: {
+        ...state.dailyBudget,
+        elapsedBatches: state.dailyBudget.elapsedBatches + 1,
+      },
+    };
+  }
+  // 情况 ④：无 budget，纯游离态日常（首批 / canon 全演完）
+  return state;
+}
+
+/**
+ * canon 演完时调用——mark triggered + 规划下一段 dailyBudget。
+ * 根据"刚演完的 canon scope" + "下一个未触发 canon 的距离"决定接下来留多少批日常。
+ */
+function finalizeCanon(
+  state: WorldState,
+  canonId: string,
+  canonScope: CanonEvent["scope"],
+): WorldState {
+  const newTriggered = state.triggeredCanonEvents.includes(canonId)
+    ? state.triggeredCanonEvents
+    : [...state.triggeredCanonEvents, canonId];
+
+  // 找下一个 main_line canon（按 ISO 升序），用本 canon 自身的日期作为间隔起点
+  const triggeredSet = new Set(newTriggered);
+  const justCompletedEvent = canonTimeline.find((e) => e.id === canonId);
+  const startIso = justCompletedEvent?.date.iso ?? state.date.iso;
+  const nextCanon = canonTimeline
+    .filter((e) => e.importance === "main_line" && !triggeredSet.has(e.id))
+    .sort((a, b) => a.date.iso.localeCompare(b.date.iso))[0];
+
+  const dailyBudget = nextCanon
+    ? planDailyBudget(startIso, canonScope, nextCanon.date.iso)
+    : null; // 没有更多 main_line canon 了，进入纯日常游离态
+
+  return {
+    ...state,
+    activeCanon: null,
+    triggeredCanonEvents: newTriggered,
+    dailyBudget,
   };
 }

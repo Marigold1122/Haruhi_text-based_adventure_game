@@ -19,6 +19,7 @@ export type LegacyPromptBuildInput = {
   timelineContext?: string;
   identityGuide?: string;
   canonFocus?: import("@/data/canonTimeline").CanonEvent;
+  lateHardConstraints?: string;
 };
 
 export type LegacyPromptBuildOutput = {
@@ -41,6 +42,7 @@ export function buildLegacyPrompt(input: LegacyPromptBuildInput): LegacyPromptBu
     timelineContext: input.timelineContext,
     identityGuide: input.identityGuide,
     canonFocus: input.canonFocus,
+    lateHardConstraints: input.lateHardConstraints,
   });
 
   return {

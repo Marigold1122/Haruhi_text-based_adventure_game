@@ -229,8 +229,10 @@ export function assemblePrompt(opts: {
   timelineContext?: string;      // 当前日期附近的 SOS 团世界事件
   identityGuide?: string;        // 当前身份对应的剧情指引
   canonFocus?: import("@/data/canonTimeline").CanonEvent;
+  /** 末位硬约束——绕过 worldInfo 中段被忽视的"lost in the middle"问题 */
+  lateHardConstraints?: string;
 }): AssembledPrompt {
-  const { card, lorebook, preset, state, history, summary, userInput, sceneCast, timelineContext, identityGuide, canonFocus } = opts;
+  const { card, lorebook, preset, state, history, summary, userInput, sceneCast, timelineContext, identityGuide, canonFocus, lateHardConstraints } = opts;
   const cardData = card.data;
 
   // 取最近 N 轮文本作为关键词扫描素材（含本轮输入）
@@ -302,6 +304,13 @@ export function assemblePrompt(opts: {
 
   // ===== ⑨ 当前用户输入 / 时间推进信号 =====
   messages.push({ role: "user", content: userInput });
+
+  // ===== ⑩ 末位硬约束（最后一条 system 消息，LLM 注意力最强位置）=====
+  // 这是绕过 worldInfo 中段被忽视的兜底——把 canon focus / 节奏 Tier / 未触发 canon
+  // 禁区 / 今日春日发型等关键硬约束放在 user 消息之后，作为生成前看到的最后上下文。
+  if (lateHardConstraints && lateHardConstraints.trim()) {
+    messages.push({ role: "system", content: lateHardConstraints.trim() });
+  }
 
   return {
     messages,

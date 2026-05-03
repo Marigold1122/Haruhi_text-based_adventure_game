@@ -9,6 +9,88 @@
 import type { FlowSpeed, GameDate, WorldState } from "@/types/worldState";
 import type { TimeAdvance } from "@/types/turn";
 
+// ---- clampTimeAdvance：基于 dailyBudget 的均摊式 clamp ----
+//
+// v1：固定 Tier A=3 / B=1 →【失败】日历飞跨过多个 canon
+// v2：按"距下个 canon 多远"分档（>30→7、7-30→3、1-7→1、≤1→0）→【次优】临近 canon 时
+//     卡同一天磨蹭，且与"canon 间日常预算"脱钩
+// v3（当前）：用 dailyBudget 均摊。
+//
+// 当 state.dailyBudget 存在时（即在 canon 间日常缓冲期）：
+//   · daysRemaining = nextCanonIso - currentDate（剩余日历天数）
+//   · batchesRemaining = plannedBatches - elapsedBatches（剩余批数）
+//   · idealDays = daysRemaining / batchesRemaining
+//   · minDays = max(1, floor(idealDays * 0.7))
+//
+// 这意味着：每批至少跨"理想跨度"的 70%（防止 LLM 卡住），但不强制最大值——
+// LLM 仍可主动选择某批连贯（给小 days）、某批大跨（给大 days），自然填充 canon 间日历。
+//
+// 当 dailyBudget 不存在（首批 / 所有 canon 已演完）→ 退回固定 Tier A=3 / B=1。
+//
+// Tier C（canon focus 或事件链中）：永远不 clamp，让 LLM 自由用分钟/小时。
+//
+// clamp 触发时丢掉 sub-day 单位（LLM 写的是场景级别，那几小时无意义）。
+export function clampTimeAdvance(
+  advance: TimeAdvance,
+  state: WorldState,
+  inCanonFocus: boolean,
+): { advance: TimeAdvance; clamped: boolean; reason?: string } {
+  // Tier C — 让 LLM 自由控制
+  if (inCanonFocus || state.activeChain) {
+    return { advance, clamped: false };
+  }
+
+  const givenDays = advance.days ?? 0;
+  const subDayUsed = (advance.hours ?? 0) > 0 || (advance.minutes ?? 0) > 0;
+  const minDays = computeMinDays(state);
+
+  if (minDays === 0) {
+    return { advance, clamped: false };
+  }
+
+  if (givenDays >= minDays) return { advance, clamped: false };
+
+  return {
+    advance: { days: minDays, note: advance.note },
+    clamped: true,
+    reason: `Budget clamp: identity=${state.identity}, ${describeBudget(state)}, given days=${givenDays}${subDayUsed ? " (+sub-day)" : ""} → forced days=${minDays}`,
+  };
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function computeMinDays(state: WorldState): number {
+  const budget = state.dailyBudget;
+  if (budget) {
+    const cur = new Date(state.date.iso).getTime();
+    const next = new Date(budget.nextCanonIso).getTime();
+    if (!Number.isNaN(cur) && !Number.isNaN(next)) {
+      const daysRemaining = (next - cur) / ONE_DAY_MS;
+      // 关键：canon 已经过了 / 或在它当天 → 不强制 clamp，下批就会触发 canon。
+      // 这条优先于 plannedBatches 检查——即使 budget plannedBatches=0（canon 紧邻），
+      // 此分支也会避免 fall through 到 Tier A=3 造成多 turn 累计大幅过冲。
+      if (daysRemaining <= 1) return 0;
+      // 有 budget 且 canon 还远 → 按预算均摊
+      if (budget.plannedBatches > 0) {
+        const batchesRemaining = Math.max(1, budget.plannedBatches - budget.elapsedBatches);
+        const ideal = daysRemaining / batchesRemaining;
+        return Math.max(1, Math.floor(ideal * 0.7));
+      }
+      // plannedBatches=0 但 daysRemaining > 1：罕见（canon 距离 > 1 天但被规划为 0 批）
+      // 此时最少推 1 天/turn，避免无 budget 时的 Tier A=3 大跨
+      return 1;
+    }
+  }
+  // 没有 budget（首批 / 所有 canon 演完后游离态）→ 固定 Tier A/B
+  return state.identity === "passerby" ? 3 : 1;
+}
+
+function describeBudget(state: WorldState): string {
+  if (!state.dailyBudget) return "no dailyBudget";
+  const b = state.dailyBudget;
+  return `budget ${b.elapsedBatches}/${b.plannedBatches} for next canon ${b.nextCanonIso}`;
+}
+
 // ---- pushDate：按 LLM timeAdvance 推进时间 ----
 
 export function pushDate(date: GameDate, advance: TimeAdvance): GameDate {

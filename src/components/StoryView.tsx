@@ -8,8 +8,8 @@ import type { ChatMessage, StoryTurn } from "@/types/turn";
 import { fallbackTurn, parseEventJsonBatch, runLLMBatch, runLLMText } from "@/lib/llm";
 import { expandCardDescription, type RandomCharacterSeed } from "@/lib/randomMode";
 import { applyTurn } from "@/lib/worldState";
-import { pushDate } from "@/lib/timeAdvance";
-import { decideEvent } from "@/lib/eventTrigger";
+import { pushDate, clampTimeAdvance } from "@/lib/timeAdvance";
+import { decideEvent, applyCanonProgress } from "@/lib/eventTrigger";
 import { type SummaryState, emptySummary, maybeUpdateSummary, tailHistory } from "@/lib/summary";
 import { startingPointById } from "@/data/startingPoints";
 import { renderTimelineContext } from "@/data/canonTimeline";
@@ -437,21 +437,30 @@ export function StoryView({ card, lorebook, initialState, characterId, customCar
     const nextHistory = [...baseHistory, userMsg, aiMsg];
 
     // 时间推进 + 状态变化：累加批次中【每一段】的 stateChanges + timeAdvance
+    // clampTimeAdvance v3：基于 dailyBudget 均摊。注意：parser 把整批 timeAdvance
+    // 只放在【最后一段 turn】上（其他 turn 是 { minutes: 0 } 占位），所以 clamp 也只
+    // 应用在最后一段——否则每个占位段都会触发一次 clamp，多 turn 累计大幅过冲。
+    const inCanonFocus = !!decision.canonFocus;
     let advanced = next;
-    for (const t of batch) {
+    for (let i = 0; i < batch.length; i++) {
+      const t = batch[i];
+      const isLastInBatch = i === batch.length - 1;
+      const clamp = isLastInBatch
+        ? clampTimeAdvance(t.timeAdvance, advanced, inCanonFocus)
+        : { advance: t.timeAdvance, clamped: false, reason: undefined as string | undefined };
+      if (clamp.clamped && clamp.reason) console.warn("[timeAdvance]", clamp.reason);
       advanced = applyTurn(
-        { ...advanced, date: pushDate(advanced.date, t.timeAdvance), flow: t.pace === "scene" ? "chain" : "weekly" },
+        { ...advanced, date: pushDate(advanced.date, clamp.advance), flow: t.pace === "scene" ? "chain" : "weekly" },
         t,
       );
     }
 
-    // 若本批被原作时间线强制驱动 → 把焦点 canon event id 标记为已触发，避免重复
-    if (decision.canonFocus) {
-      advanced = {
-        ...advanced,
-        triggeredCanonEvents: [...advanced.triggeredCanonEvents, decision.canonFocus.id],
-      };
-    }
+    // 维护 canon 跨批演绎进度 + cooldown 计数器：
+    //   1. 本批是 canon 焦点（新启动 / 延续）→ 更新 activeCanon.batchesProgress
+    //      演完（progress 达到 totalBatchesPlanned）→ mark triggered + 清空 activeCanon
+    //      + 重置 batchesSinceLastCanon=0、记录 lastCanonScope（启动下一轮 cooldown）
+    //   2. 本批是日常 → batchesSinceLastCanon += 1
+    advanced = applyCanonProgress(advanced, decision);
 
     // 异步 Rolling Summary
     maybeUpdateSummary({ history: nextHistory, prev: baseSummary }).then(setSummary);

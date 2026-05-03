@@ -69,21 +69,21 @@ export const canonTimeline: CanonEvent[] = [
     visibility: "public",
   },
   {
-    id: "hair_ribbon_week",
-    title: "春日的彩带轮转周",
+    id: "hair_style_weekly_cycle",
+    title: "春日的发型规律周",
     date: {
       iso: "2002-04-09",
-      relative: "高一春 · 入学第一周（每天换一种发型与彩带颜色）",
+      relative: "高一春 · 入学第一周开始，每天按星期换发型——一直持续到 5 月初被阿虚指出规律为止",
       precise: false,
     },
     volume: 1,
     scope: "small",
     importance: "flavor",
     summary:
-      "春日入学后按月-火-水-木-金循环改变发型与彩带颜色（黄/红/蓝/绿/金）。阿虚某天忍不住搭话，由此打破班上没人敢理她的局面。",
+      "春日入学后每天按星期变换发型——【绑发点数 = 星期数 - 1】：周一 0 个绑发点（披散）、周二 1 个（单马尾）、周三 2 个、……周日 6 个。每周一重置回披散。她从未明说，全班也没人发现规律。这一规律持续到 4 月底-5 月初被阿虚指出。",
     participants: ["凉宫春日", "阿虚"],
     location: "北高一年五班教室",
-    narrativeFunction: "建立阿虚-春日的私人对话关系，是后续一切互动的前提。",
+    narrativeFunction: "为「阿虚指出规律 + 提到喜欢马尾 + 春日剪短发」这个关键转折做铺垫——是阿虚-春日关系的第一个真正接触点。",
     visibility: "public",
   },
   {
@@ -105,17 +105,17 @@ export const canonTimeline: CanonEvent[] = [
     title: "春日剪短发 · 转折信号",
     date: {
       iso: "2002-05-07",
-      relative: "高一春 · 黄金周后第二天（紧接阿虚向她吐槽彩带的隔天）",
+      relative: "高一春 · 黄金周后（紧接阿虚向她指出发型规律 + 提到喜欢马尾的隔天）",
       precise: false,
     },
     volume: 1,
     scope: "small",
     importance: "main_line",
     summary:
-      "在阿虚谈论她发型的隔天，春日把及腰长直发剪到肩膀长度的短发。阿虚意识到自己的话能影响她，关系进入下一阶段。",
+      "前一天阿虚私下向春日指出她按星期数变换绑发点数的规律（一直没人发现），并随口提了一句「比较喜欢马尾」。隔天春日就把长头发剪短，从此固定为短发 + 两侧黄丝带的标志造型，维持到全系列结束（且从此不再每天变换发型）。",
     participants: ["凉宫春日", "阿虚"],
     location: "北高一年五班教室",
-    narrativeFunction: "心理拐点：春日不再只是宣言型怪人，开始主动行动；也是「自建社团」的导火索。",
+    narrativeFunction: "心理拐点：春日证明了阿虚的话能影响她；也终结了「发型规律周」这个为期约一个月的造型阶段。是「自建社团」与 SOS 团的导火索。",
     visibility: "public",
   },
   {
@@ -951,6 +951,30 @@ export function getMainLinePendingTriggers(
       return t <= cur;
     })
     .sort((a, b) => a.date.iso.localeCompare(b.date.iso));
+}
+
+/**
+ * 给动态 clamp 用：返回未来最近一个还没触发的 main_line canon 事件 ISO 日期。
+ * 与 getMainLinePendingTriggers 区别：
+ *   - getMainLinePendingTriggers 返回"日期 ≤ 当前但还没演的"（应该立即触发）
+ *   - getNextUntriggeredMainLineIso 返回"日期 > 当前还没触发的"（即将到来）
+ * clamp 用这个来决定"现在跳几天最合理"——临近就慢跳，远离就快跳。
+ */
+export function getNextUntriggeredMainLineIso(
+  currentIso: string,
+  triggeredIds: Set<string>,
+): string | undefined {
+  const cur = new Date(currentIso).getTime();
+  if (Number.isNaN(cur)) return undefined;
+  const future = canonTimeline
+    .filter((e) => e.importance === "main_line")
+    .filter((e) => !triggeredIds.has(e.id))
+    .filter((e) => {
+      const t = new Date(e.date.iso).getTime();
+      return !Number.isNaN(t) && t > cur;
+    })
+    .sort((a, b) => a.date.iso.localeCompare(b.date.iso));
+  return future[0]?.date.iso;
 }
 
 /**

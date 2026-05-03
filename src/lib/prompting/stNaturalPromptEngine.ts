@@ -17,6 +17,7 @@ export type StNaturalPromptInput = {
   activeLoreEntries: string[];
   filteredLoreEntries: string[];
   worldInfoRegexHits?: string[];
+  lateHardConstraints?: string;
 };
 
 export type StNaturalPromptOutput = {
@@ -55,6 +56,7 @@ export function buildSillyTavernNaturalPrompt(input: StNaturalPromptInput): StNa
         ...userInputRegex.applied,
         ...(input.worldInfoRegexHits ?? []),
       ],
+      lateHardConstraints: input.lateHardConstraints,
     },
   });
 

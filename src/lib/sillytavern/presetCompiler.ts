@@ -25,6 +25,12 @@ export type SillyTavernPresetCompileOptions = {
   appendOutputContract?: boolean;
   applyUserInputRegex?: boolean;
   extraRegexHits?: string[];
+  /**
+   * 末位硬约束块——在 JSON contract 之后追加为最后一条 system 消息，
+   * 占据 LLM 注意力最强位置。用于绕过"lost in the middle"，让 canon focus、
+   * 节奏 Tier、未触发 canon 禁区等硬约束确实被遵守。
+   */
+  lateHardConstraints?: string;
 };
 
 export function compileSillyTavernPresetPrompt(opts: {
@@ -101,6 +107,16 @@ export function compileSillyTavernPresetPrompt(opts: {
     pushMergedMessage(messages, {
       role: "system",
       content: MINIMAL_EVENT_JSON_CONTRACT,
+    });
+  }
+
+  // 末位硬约束放在 JSON contract 之后——也就是 LLM 看到的最后一条 system 上下文。
+  // 这是 prompt 中注意力最强的位置，用来确保 canon focus / 节奏 Tier / 未触发 canon 禁区
+  // 真的被遵守，绕过 worldInfo 中段被忽视的"lost in the middle"问题。
+  if (options?.lateHardConstraints && options.lateHardConstraints.trim()) {
+    pushMergedMessage(messages, {
+      role: "system",
+      content: options.lateHardConstraints.trim(),
     });
   }
 
